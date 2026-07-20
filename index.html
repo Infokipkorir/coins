@@ -8,16 +8,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0B0E14;
-    --surface: #141922;
-    --surface-2: #1C2330;
-    --border: #262E3D;
-    --text: #EDF1F7;
-    --text-muted: #7C8798;
-    --gold: #F0B429;
-    --gold-dim: #7A5E1C;
-    --buy: #34D399;
-    --sell: #FB6F6F;
+    --bg: #F6F7FA;
+    --surface: #FFFFFF;
+    --surface-2: #F0F2F6;
+    --border: #E2E6ED;
+    --text: #14171F;
+    --text-muted: #6B7280;
+    --gold: #B45309;
+    --gold-soft: #FEF3E2;
+    --buy: #16A34A;
+    --sell: #DC2626;
     --radius: 14px;
     font-size: 16px;
   }
@@ -51,8 +51,8 @@
   }
   .coin-mark {
     width: 28px; height: 28px; border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #FFD666, var(--gold) 60%, var(--gold-dim) 100%);
-    box-shadow: inset 0 0 0 2px rgba(0,0,0,0.15);
+    background: radial-gradient(circle at 35% 30%, #FFD666, var(--gold) 60%, #7A4A0C 100%);
+    box-shadow: inset 0 0 0 2px rgba(0,0,0,0.06);
   }
   .tagline {
     text-align: center;
@@ -66,6 +66,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 28px 26px;
+    box-shadow: 0 1px 2px rgba(20,23,31,0.04);
   }
 
   .segmented {
@@ -88,7 +89,7 @@
     border-radius: 7px;
     cursor: pointer;
   }
-  .segmented button.active { background: var(--gold); color: #1A1305; }
+  .segmented button.active { background: var(--gold); color: #fff; }
   .segmented button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
   .field { margin-bottom: 14px; }
@@ -113,13 +114,39 @@
     outline-offset: 1px;
   }
 
+  .password-wrap { position: relative; }
+  .password-wrap input { padding-right: 42px; }
+  .toggle-visibility {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 30px;
+    height: 30px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    padding: 0;
+  }
+  .toggle-visibility:hover { color: var(--text); background: var(--border); }
+  .toggle-visibility:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+  .toggle-visibility svg { width: 18px; height: 18px; }
+  .toggle-visibility .icon-off { display: none; }
+  .toggle-visibility.showing .icon-on { display: none; }
+  .toggle-visibility.showing .icon-off { display: block; }
+
   .submit-btn {
     width: 100%;
     padding: 13px;
     border: none;
     border-radius: 10px;
     background: var(--gold);
-    color: #1A1305;
+    color: #fff;
     font-family: 'Sora', sans-serif;
     font-weight: 700;
     font-size: 14px;
@@ -166,7 +193,13 @@
       </div>
       <div class="field">
         <label for="password">Password</label>
-        <input type="password" id="password" autocomplete="current-password" required minlength="8" />
+        <div class="password-wrap">
+          <input type="password" id="password" autocomplete="current-password" required minlength="8" />
+          <button type="button" class="toggle-visibility" id="togglePassword" aria-label="Show password" aria-pressed="false">
+            <svg class="icon-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="icon-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 5.06-5.94M9.9 4.24A10.6 10.6 0 0 1 12 4c7 0 11 8 11 8a18.6 18.6 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
       </div>
       <button type="submit" class="submit-btn" id="submitBtn">Sign in</button>
     </form>
@@ -207,6 +240,17 @@
     });
   });
 
+  // Show/hide password
+  const passwordInput = el("password");
+  const toggleBtn = el("togglePassword");
+  toggleBtn.addEventListener("click", () => {
+    const showing = passwordInput.type === "text";
+    passwordInput.type = showing ? "password" : "text";
+    toggleBtn.classList.toggle("showing", !showing);
+    toggleBtn.setAttribute("aria-pressed", String(!showing));
+    toggleBtn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+  });
+
   el("authForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = el("email").value.trim();
@@ -216,17 +260,28 @@
     setStatus(mode === "signin" ? "Signing in…" : "Creating account…");
 
     try {
-      const { error } = mode === "signin"
-        ? await client.auth.signInWithPassword({ email, password })
-        : await client.auth.signUp({ email, password });
-
-      if (error) throw error;
-
       if (mode === "signup") {
+        const { data, error } = await client.auth.signUp({ email, password });
+        if (error) throw error;
+
+        // Supabase returns a user object with no error even when the email
+        // is already registered (this avoids leaking which emails exist).
+        // The reliable way to detect a duplicate is an empty identities array
+        // on the returned user — a brand-new signup always has at least one.
+        const alreadyRegistered = data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0;
+        if (alreadyRegistered) {
+          setStatus("This email is already registered — please sign in instead.", "error");
+          btn.disabled = false;
+          return;
+        }
+
         setStatus("Account created — check your email to confirm, then sign in.", "success");
         btn.disabled = false;
         return;
       }
+
+      const { error } = await client.auth.signInWithPassword({ email, password });
+      if (error) throw error;
 
       setStatus("Signed in — redirecting…", "success");
       window.location.href = REDIRECT_TARGET;
