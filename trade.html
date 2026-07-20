@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trade — Coin Exchange</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #F6F7FA;
+    --surface: #FFFFFF;
+    --surface-2: #F0F2F6;
+    --border: #E2E6ED;
+    --text: #14171F;
+    --text-muted: #6B7280;
+    --gold: #B45309;
+    --gold-soft: #FEF3E2;
+    --buy: #16A34A;
+    --buy-soft: #E7F7EC;
+    --sell: #DC2626;
+    --sell-soft: #FDECEC;
+    --radius: 14px;
+    font-size: 16px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+  h1, h2, .display { font-family: 'Sora', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  .ticker-wrap { overflow: hidden; background: var(--surface); border-bottom: 1px solid var(--border); padding: 8px 0; }
+  .ticker { display: flex; gap: 48px; white-space: nowrap; animation: scroll 22s linear infinite; width: max-content; }
+  .ticker span { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text-muted); }
+  .ticker .up { color: var(--buy); }
+  .ticker .down { color: var(--sell); }
+  @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) { .ticker { animation: none; } }
+
+  header.topbar { display: flex; justify-content: space-between; align-items: center; padding: 20px 28px; max-width: 720px; margin: 0 auto; flex-wrap: wrap; gap: 10px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; }
+  .coin-mark { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #FFD666, var(--gold) 60%, #7A4A0C 100%); }
+  nav { display: flex; gap: 6px; align-items: center; }
+  nav a { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; }
+  nav a.active { color: #fff; background: var(--gold); }
+  #signOutBtn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 12px; padding: 7px 12px; border-radius: 8px; cursor: pointer; display: none; }
+  .balances { display: flex; gap: 18px; font-size: 13px; color: var(--text-muted); }
+  .balances b { color: var(--text); font-family: 'JetBrains Mono', monospace; font-weight: 500; }
+
+  main { max-width: 480px; margin: 20px auto 60px; padding: 0 20px; }
+
+  .price-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px 28px; text-align: center; box-shadow: 0 1px 2px rgba(20,23,31,0.04); }
+  .price-label { color: var(--text-muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .price-value { font-size: 44px; font-weight: 700; margin: 6px 0 2px; font-family: 'JetBrains Mono', monospace; }
+  .price-change { font-size: 13px; font-family: 'JetBrains Mono', monospace; }
+  .price-change.up { color: var(--buy); }
+  .price-change.down { color: var(--sell); }
+  .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--buy); margin-right: 5px; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .quick-actions { display: flex; gap: 10px; margin: 16px 0; }
+  .quick-actions button {
+    flex: 1; padding: 11px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
+    font-family: 'Sora', sans-serif; font-weight: 600; font-size: 13px; color: var(--text); cursor: pointer;
+  }
+  .quick-actions button:hover { background: var(--surface-2); }
+
+  .trade-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px 22px; box-shadow: 0 1px 2px rgba(20,23,31,0.04); }
+
+  .segmented { display: flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-bottom: 18px; }
+  .segmented button { flex: 1; padding: 10px; border: none; background: transparent; color: var(--text-muted); font-family: 'Sora', sans-serif; font-weight: 600; font-size: 14px; border-radius: 7px; cursor: pointer; }
+  .segmented button.active[data-side="buy"] { background: var(--buy); color: #fff; }
+  .segmented button.active[data-side="sell"] { background: var(--sell); color: #fff; }
+  .segmented button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .field { margin-bottom: 8px; }
+  .field label { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
+  .field label .max-link { color: var(--gold); cursor: pointer; font-weight: 600; }
+  .field input { width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 18px; padding: 12px 14px; border-radius: 10px; }
+  .field input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+  .estimate { font-size: 13px; color: var(--text-muted); margin: 6px 0 16px; }
+  .estimate b { color: var(--text); font-family: 'JetBrains Mono', monospace; }
+
+  .confirm-btn { width: 100%; padding: 15px; border: none; border-radius: 10px; font-family: 'Sora', sans-serif; font-weight: 700; font-size: 15px; cursor: pointer; }
+  .confirm-btn[data-side="buy"] { background: var(--buy); color: #fff; }
+  .confirm-btn[data-side="sell"] { background: var(--sell); color: #fff; }
+  .confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .confirm-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .status { margin-top: 14px; font-size: 13px; text-align: center; min-height: 18px; }
+  .status.error { color: var(--sell); }
+  .status.success { color: var(--buy); }
+
+  .activity { margin-top: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+  .activity h2 { font-size: 14px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin: 0 0 10px; }
+  .activity-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .activity-row:last-child { border-bottom: none; }
+  .activity-row .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 5px; margin-right: 8px; }
+  .tag.buy { background: var(--buy-soft); color: var(--buy); }
+  .tag.sell { background: var(--sell-soft); color: var(--sell); }
+  .tag.deposit { background: var(--gold-soft); color: var(--gold); }
+  .tag.withdraw { background: var(--surface-2); color: var(--text-muted); }
+  .activity-row .amt { font-family: 'JetBrains Mono', monospace; color: var(--text-muted); }
+
+  .demo-banner { max-width: 480px; margin: 16px auto 0; padding: 10px 14px; background: var(--gold-soft); border: 1px solid var(--gold); border-radius: 10px; font-size: 12px; color: var(--gold); text-align: center; }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(20,23,31,0.4); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); width: 100%; max-width: 400px; padding: 24px; }
+  .modal h3 { margin: 0 0 4px; font-size: 17px; }
+  .modal .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 18px; }
+  .method-options { display: flex; gap: 8px; margin-bottom: 16px; }
+  .method-options button {
+    flex: 1; padding: 10px 6px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-2);
+    font-size: 12px; font-weight: 600; color: var(--text-muted); cursor: pointer; font-family: 'Sora', sans-serif;
+  }
+  .method-options button.active { background: var(--gold-soft); border-color: var(--gold); color: var(--gold); }
+  .modal .field input { font-size: 14px; padding: 10px 12px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 6px; }
+  .modal-actions .cancel-btn { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-weight: 600; font-size: 13px; cursor: pointer; font-family: 'Sora', sans-serif; }
+  .modal-actions .submit-btn { flex: 1; padding: 12px; border-radius: 10px; border: none; background: var(--gold); color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; font-family: 'Sora', sans-serif; }
+  .modal-actions .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .modal .hint { font-size: 12px; color: var(--text-muted); margin-top: -6px; margin-bottom: 14px; }
+</style>
+</head>
+<body>
+
+<div class="ticker-wrap"><div class="ticker" id="ticker"></div></div>
+
+<header class="topbar">
+  <div class="brand"><span class="coin-mark"></span><span>Exchange</span></div>
+  <nav>
+    <a href="market.html">Market</a>
+    <a href="trade.html" class="active">Trade</a>
+    <button id="signOutBtn">Sign out</button>
+  </nav>
+  <div class="balances">
+    <span>Fiat <b id="fiatBalance">KES 0.00</b></span>
+    <span>Coins <b id="coinBalance">0.00000000</b></span>
+  </div>
+</header>
+
+<main>
+  <div class="price-card">
+    <div class="price-label"><span class="live-dot" id="liveDot" style="display:none;"></span>Current price</div>
+    <div class="price-value mono" id="priceValue">KES 0.00</div>
+    <div class="price-change" id="priceChange">—</div>
+  </div>
+
+  <div class="quick-actions">
+    <button id="depositBtn">Deposit</button>
+    <button id="withdrawBtn">Withdraw</button>
+  </div>
+
+  <div class="trade-card">
+    <div class="segmented" role="tablist" aria-label="Trade side">
+      <button type="button" data-side="buy" class="active" role="tab" aria-selected="true">Buy</button>
+      <button type="button" data-side="sell" role="tab" aria-selected="false">Sell</button>
+    </div>
+
+    <div class="field">
+      <label for="coinAmount"><span>Amount (coins)</span><span class="max-link" id="maxLink" style="display:none;">Use max</span></label>
+      <input type="number" id="coinAmount" inputmode="decimal" min="0" step="0.00000001" placeholder="0.00" />
+    </div>
+    <div class="estimate">≈ <b id="fiatEstimate">KES 0.00</b></div>
+
+    <button class="confirm-btn" id="confirmBtn" data-side="buy">Buy coins</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="activity">
+    <h2>Recent activity</h2>
+    <div id="activityList"></div>
+  </div>
+
+  <div class="demo-banner" id="demoBanner">Running in demo mode.</div>
+</main>
+
+<!-- Deposit / Withdraw modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3 id="modalTitle">Deposit</h3>
+    <div class="sub" id="modalSub">Choose a payment method and amount.</div>
+
+    <div class="method-options" id="methodOptions">
+      <button type="button" data-method="mpesa" class="active">M-Pesa</button>
+      <button type="button" data-method="airtel">Airtel Money</button>
+      <button type="button" data-method="crypto">Crypto</button>
+    </div>
+
+    <div class="field" id="phoneField">
+      <label for="phoneInput">Phone number</label>
+      <input type="tel" id="phoneInput" placeholder="07XX XXX XXX" />
+    </div>
+    <div class="field" id="cryptoField" style="display:none;">
+      <label for="cryptoInput" id="cryptoLabel">Your crypto address</label>
+      <input type="text" id="cryptoInput" placeholder="e.g. bc1q… or 0x…" />
+    </div>
+    <div class="hint" id="cryptoHint" style="display:none;"></div>
+
+    <div class="field">
+      <label for="amountInput">Amount (KES)</label>
+      <input type="number" id="amountInput" min="0" step="0.01" placeholder="0.00" />
+    </div>
+
+    <div class="status" id="modalStatus"></div>
+    <div class="modal-actions">
+      <button class="cancel-btn" id="modalCancel">Cancel</button>
+      <button class="submit-btn" id="modalSubmit">Submit request</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = "https://nfrrcvqlbeqtivgpjkwf.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_LmGTKVphP1BnXrv1MVgYig_QImgQ_Rd";
+  const EDGE_FUNCTION_PATH = "/functions/v1/execute-trade";
+  const DEMO_MODE = !SUPABASE_URL || !SUPABASE_ANON_KEY;
+
+  let state = {
+    side: "buy",
+    price: 12.50,
+    fiatBalance: 5000.00,
+    coinBalance: 8.5,
+    activity: [
+      { type: "buy", coin_amount: 3.0, fiat_amount: 37.50, created_at: Date.now() - 1000 * 60 * 40 },
+      { type: "sell", coin_amount: 1.2, fiat_amount: 14.88, created_at: Date.now() - 1000 * 60 * 180 },
+    ],
+  };
+
+  const el = (id) => document.getElementById(id);
+  function fmtFiat(n) { return "KES " + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function fmtCoin(n) { return Number(n).toFixed(8); }
+
+  function renderTicker() {
+    const points = [];
+    let p = state.price;
+    for (let i = 0; i < 10; i++) {
+      const delta = (Math.random() - 0.5) * 0.6;
+      p = Math.max(0.01, p + delta);
+      points.push({ price: p, up: delta >= 0 });
+    }
+    const html = points.map(pt => `<span class="${pt.up ? 'up' : 'down'}">COIN ${fmtFiat(pt.price)} ${pt.up ? '▲' : '▼'}</span>`).join("");
+    el("ticker").innerHTML = html + html;
+  }
+
+  function renderBalances() {
+    el("fiatBalance").textContent = fmtFiat(state.fiatBalance);
+    el("coinBalance").textContent = fmtCoin(state.coinBalance);
+  }
+  function renderPrice() { el("priceValue").textContent = fmtFiat(state.price); }
+
+  function renderActivity() {
+    const list = el("activityList");
+    if (!state.activity.length) { list.innerHTML = `<div class="activity-row" style="color:var(--text-muted)">No activity yet</div>`; return; }
+    list.innerHTML = state.activity.slice().sort((a, b) => b.created_at - a.created_at).map(t => {
+      const isTrade = t.type === "buy" || t.type === "sell";
+      const label = isTrade ? `${fmtCoin(t.coin_amount)} coins` : `${t.method || ""}`;
+      return `
+      <div class="activity-row">
+        <span><span class="tag ${t.type}">${t.type.toUpperCase()}</span>${label}</span>
+        <span class="amt">${fmtFiat(t.fiat_amount ?? t.amount)}</span>
+      </div>`;
+    }).join("");
+  }
+
+  function updateEstimate() {
+    const amount = parseFloat(el("coinAmount").value) || 0;
+    el("fiatEstimate").textContent = fmtFiat(amount * state.price);
+  }
+
+  function setSide(side) {
+    state.side = side;
+    document.querySelectorAll(".segmented button").forEach(b => {
+      const active = b.dataset.side === side;
+      b.classList.toggle("active", active);
+      b.setAttribute("aria-selected", active);
+    });
+    el("confirmBtn").dataset.side = side;
+    el("confirmBtn").textContent = side === "buy" ? "Buy coins" : "Sell coins";
+    el("maxLink").style.display = side === "sell" ? "inline" : "none";
+  }
+
+  el("maxLink").addEventListener("click", () => {
+    el("coinAmount").value = state.coinBalance;
+    updateEstimate();
+  });
+
+  function setStatus(message, type) {
+    const s = el("status");
+    s.textContent = message;
+    s.className = "status" + (type ? " " + type : "");
+  }
+
+  async function submitTrade() {
+    const amount = parseFloat(el("coinAmount").value);
+    if (!amount || amount <= 0) { setStatus("Enter an amount greater than zero", "error"); return; }
+    if (state.side === "sell" && amount > state.coinBalance) { setStatus("You only have " + fmtCoin(state.coinBalance) + " coins available", "error"); return; }
+
+    const btn = el("confirmBtn");
+    btn.disabled = true;
+    setStatus("Processing trade…");
+    const idempotencyKey = crypto.randomUUID();
+
+    try {
+      let txn;
+      if (DEMO_MODE) {
+        await new Promise(r => setTimeout(r, 500));
+        const fiatAmount = Math.round(amount * state.price * 100) / 100;
+        if (state.side === "buy" && fiatAmount > state.fiatBalance) throw new Error("Insufficient fiat balance");
+        if (state.side === "sell" && amount > state.coinBalance) throw new Error("Insufficient coin balance");
+        if (state.side === "buy") { state.fiatBalance -= fiatAmount; state.coinBalance += amount; }
+        else { state.fiatBalance += fiatAmount; state.coinBalance -= amount; }
+        txn = { type: state.side, coin_amount: amount, fiat_amount: fiatAmount, created_at: Date.now() };
+        state.activity.push(txn);
+        renderBalances();
+        renderActivity();
+      } else {
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        const res = await fetch(SUPABASE_URL + EDGE_FUNCTION_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + session.access_token },
+          body: JSON.stringify({ type: state.side, coin_amount: amount, idempotency_key: idempotencyKey }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "Trade failed");
+        txn = body.transaction;
+        await refreshFromServer();
+      }
+      el("coinAmount").value = "";
+      updateEstimate();
+      setStatus(`${txn.type === "buy" ? "Bought" : "Sold"} ${fmtCoin(txn.coin_amount)} coins for ${fmtFiat(txn.fiat_amount)}`, "success");
+    } catch (err) {
+      setStatus(err.message || "Something went wrong", "error");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.querySelectorAll(".segmented button").forEach(b => b.addEventListener("click", () => setSide(b.dataset.side)));
+  el("coinAmount").addEventListener("input", updateEstimate);
+  el("confirmBtn").addEventListener("click", submitTrade);
+
+  // ------------------------------------------------------------
+  // Deposit / Withdraw modal
+  // ------------------------------------------------------------
+  let modalType = "deposit";
+  let modalMethod = "mpesa";
+
+  function openModal(type) {
+    modalType = type;
+    el("modalTitle").textContent = type === "deposit" ? "Deposit" : "Withdraw";
+    el("modalSub").textContent = type === "deposit"
+      ? "Choose how you'd like to fund your wallet."
+      : "Choose how you'd like to receive your funds.";
+    el("modalSubmit").textContent = type === "deposit" ? "Submit deposit request" : "Submit withdrawal request";
+    el("modalStatus").textContent = "";
+    el("amountInput").value = "";
+    setMethod("mpesa");
+    el("modalOverlay").classList.add("open");
+  }
+  function closeModal() { el("modalOverlay").classList.remove("open"); }
+
+  function setMethod(method) {
+    modalMethod = method;
+    document.querySelectorAll("#methodOptions button").forEach(b => b.classList.toggle("active", b.dataset.method === method));
+    const isCrypto = method === "crypto";
+    el("phoneField").style.display = isCrypto ? "none" : "block";
+    el("cryptoField").style.display = isCrypto ? "block" : "none";
+    el("cryptoHint").style.display = isCrypto && modalType === "deposit" ? "block" : "none";
+    if (isCrypto) {
+      el("cryptoLabel").textContent = modalType === "deposit" ? "Your sending address" : "Destination address";
+      el("cryptoHint").textContent = "You'll receive our deposit address by email once this request is reviewed.";
+    }
+  }
+
+  el("depositBtn").addEventListener("click", () => openModal("deposit"));
+  el("withdrawBtn").addEventListener("click", () => openModal("withdraw"));
+  el("modalCancel").addEventListener("click", closeModal);
+  document.querySelectorAll("#methodOptions button").forEach(b => b.addEventListener("click", () => setMethod(b.dataset.method)));
+
+  el("modalSubmit").addEventListener("click", async () => {
+    const amount = parseFloat(el("amountInput").value);
+    if (!amount || amount <= 0) { el("modalStatus").textContent = "Enter a valid amount"; el("modalStatus").className = "status error"; return; }
+    if (modalType === "withdraw" && amount > state.fiatBalance) { el("modalStatus").textContent = "Amount exceeds your fiat balance"; el("modalStatus").className = "status error"; return; }
+
+    const phone = modalMethod !== "crypto" ? el("phoneInput").value.trim() : null;
+    const cryptoAddress = modalMethod === "crypto" ? el("cryptoInput").value.trim() : null;
+    if (modalMethod !== "crypto" && !phone) { el("modalStatus").textContent = "Enter a phone number"; el("modalStatus").className = "status error"; return; }
+    if (modalMethod === "crypto" && !cryptoAddress) { el("modalStatus").textContent = "Enter a crypto address"; el("modalStatus").className = "status error"; return; }
+
+    el("modalSubmit").disabled = true;
+    el("modalStatus").textContent = "Submitting…";
+    el("modalStatus").className = "status";
+
+    try {
+      if (DEMO_MODE) {
+        await new Promise(r => setTimeout(r, 400));
+        state.activity.push({ type: modalType, amount, method: modalMethod, created_at: Date.now() });
+        renderActivity();
+      } else {
+        const { error } = await window.supabaseClient.rpc("submit_fiat_request", {
+          p_type: modalType, p_method: modalMethod, p_amount: amount, p_phone: phone, p_crypto_address: cryptoAddress,
+        });
+        if (error) throw error;
+      }
+      el("modalStatus").textContent = "Request submitted — pending admin review.";
+      el("modalStatus").className = "status success";
+      setTimeout(closeModal, 1200);
+    } catch (err) {
+      el("modalStatus").textContent = err.message || "Something went wrong";
+      el("modalStatus").className = "status error";
+    } finally {
+      el("modalSubmit").disabled = false;
+    }
+  });
+
+  // ------------------------------------------------------------
+  // Live wiring
+  // ------------------------------------------------------------
+  async function initLive() {
+    el("demoBanner").style.display = "none";
+    window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const { data: { session } } = await window.supabaseClient.auth.getSession();
+    if (!session) { window.location.href = "index.html?redirect=trade.html"; return; }
+
+    await refreshFromServer();
+    el("liveDot").style.display = "inline-block";
+    el("signOutBtn").style.display = "inline-block";
+    el("signOutBtn").addEventListener("click", async () => {
+      await window.supabaseClient.auth.signOut();
+      window.location.href = "index.html";
+    });
+
+    // Real-time price updates — no polling needed
+    window.supabaseClient
+      .channel("coin-price-changes")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "coin_price" }, (payload) => {
+        state.price = Number(payload.new.price);
+        renderPrice();
+        updateEstimate();
+      })
+      .subscribe();
+  }
+
+  async function refreshFromServer() {
+    const client = window.supabaseClient;
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) return;
+
+    const [{ data: price }, { data: wallet }, { data: txns }, { data: fiatReqs }] = await Promise.all([
+      client.from("coin_price").select("price").eq("id", 1).single(),
+      client.from("wallets").select("fiat_balance, coin_balance").eq("user_id", user.id).maybeSingle(),
+      client.from("transactions").select("type, coin_amount, fiat_amount, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(10),
+      client.from("fiat_requests").select("type, method, amount, status, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(10),
+    ]);
+
+    if (price) state.price = Number(price.price);
+    if (wallet) { state.fiatBalance = Number(wallet.fiat_balance); state.coinBalance = Number(wallet.coin_balance); }
+    else { state.fiatBalance = 0; state.coinBalance = 0; }
+
+    const tradeRows = (txns || []).map(t => ({ ...t, created_at: new Date(t.created_at).getTime() }));
+    const requestRows = (fiatReqs || []).map(r => ({ ...r, created_at: new Date(r.created_at).getTime() }));
+    state.activity = [...tradeRows, ...requestRows];
+
+    renderPrice();
+    renderBalances();
+    renderActivity();
+  }
+
+  renderTicker();
+  renderBalances();
+  renderPrice();
+  renderActivity();
+  setSide("buy");
+  setInterval(renderTicker, 8000);
+
+  if (!DEMO_MODE) initLive();
+</script>
+
+</body>
+</html>

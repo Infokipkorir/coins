@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Exchange — Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B0E14;
+    --surface: #141922;
+    --surface-2: #1C2330;
+    --border: #262E3D;
+    --text: #EDF1F7;
+    --text-muted: #7C8798;
+    --gold: #F0B429;
+    --gold-dim: #7A5E1C;
+    --buy: #34D399;
+    --sell: #FB6F6F;
+    --radius: 14px;
+    font-size: 16px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  h1, .display { font-family: 'Sora', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  .wrap {
+    width: 100%;
+    max-width: 380px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-weight: 600;
+    font-size: 19px;
+    margin-bottom: 6px;
+  }
+  .coin-mark {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #FFD666, var(--gold) 60%, var(--gold-dim) 100%);
+    box-shadow: inset 0 0 0 2px rgba(0,0,0,0.15);
+  }
+  .tagline {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-bottom: 28px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 26px;
+  }
+
+  .segmented {
+    display: flex;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px;
+    margin-bottom: 22px;
+  }
+  .segmented button {
+    flex: 1;
+    padding: 9px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: 'Sora', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .segmented button.active { background: var(--gold); color: #1A1305; }
+  .segmented button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .field input {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    padding: 11px 13px;
+    border-radius: 9px;
+  }
+  .field input:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 1px;
+  }
+
+  .submit-btn {
+    width: 100%;
+    padding: 13px;
+    border: none;
+    border-radius: 10px;
+    background: var(--gold);
+    color: #1A1305;
+    font-family: 'Sora', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .submit-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .status {
+    margin-top: 14px;
+    font-size: 13px;
+    text-align: center;
+    min-height: 18px;
+  }
+  .status.error { color: var(--sell); }
+  .status.success { color: var(--buy); }
+
+  .fineprint {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: 18px;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="brand"><span class="coin-mark"></span><span>Exchange</span></div>
+  <div class="tagline">Sign in to trade, or create an account</div>
+
+  <div class="card">
+    <div class="segmented" role="tablist" aria-label="Auth mode">
+      <button type="button" data-mode="signin" class="active" role="tab" aria-selected="true">Sign in</button>
+      <button type="button" data-mode="signup" role="tab" aria-selected="false">Create account</button>
+    </div>
+
+    <form id="authForm">
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" autocomplete="email" required />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" autocomplete="current-password" required minlength="8" />
+      </div>
+      <button type="submit" class="submit-btn" id="submitBtn">Sign in</button>
+    </form>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="fineprint">By continuing you agree this is an MVP — balances, prices, and coins here are not yet backed by a live payment or verification flow.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = "https://nfrrcvqlbeqtivgpjkwf.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_LmGTKVphP1BnXrv1MVgYig_QImgQ_Rd";
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const REDIRECT_TARGET = new URLSearchParams(location.search).get("redirect") || "market.html";
+
+  let mode = "signin";
+  const el = (id) => document.getElementById(id);
+
+  function setStatus(message, type) {
+    const s = el("status");
+    s.textContent = message;
+    s.className = "status" + (type ? " " + type : "");
+  }
+
+  document.querySelectorAll(".segmented button").forEach(b => {
+    b.addEventListener("click", () => {
+      mode = b.dataset.mode;
+      document.querySelectorAll(".segmented button").forEach(x => {
+        const active = x === b;
+        x.classList.toggle("active", active);
+        x.setAttribute("aria-selected", active);
+      });
+      el("submitBtn").textContent = mode === "signin" ? "Sign in" : "Create account";
+      el("password").autocomplete = mode === "signin" ? "current-password" : "new-password";
+      setStatus("");
+    });
+  });
+
+  el("authForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = el("email").value.trim();
+    const password = el("password").value;
+    const btn = el("submitBtn");
+    btn.disabled = true;
+    setStatus(mode === "signin" ? "Signing in…" : "Creating account…");
+
+    try {
+      const { error } = mode === "signin"
+        ? await client.auth.signInWithPassword({ email, password })
+        : await client.auth.signUp({ email, password });
+
+      if (error) throw error;
+
+      if (mode === "signup") {
+        setStatus("Account created — check your email to confirm, then sign in.", "success");
+        btn.disabled = false;
+        return;
+      }
+
+      setStatus("Signed in — redirecting…", "success");
+      window.location.href = REDIRECT_TARGET;
+    } catch (err) {
+      setStatus(err.message || "Something went wrong", "error");
+      btn.disabled = false;
+    }
+  });
+
+  // If already signed in, skip straight to the app
+  client.auth.getSession().then(({ data: { session } }) => {
+    if (session) window.location.href = REDIRECT_TARGET;
+  });
+</script>
+
+</body>
+</html>

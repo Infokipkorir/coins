@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin — Coin Exchange</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #0B0E14; --surface: #141922; --surface-2: #1C2330; --border: #262E3D;
+    --text: #EDF1F7; --text-muted: #7C8798; --gold: #F0B429; --gold-dim: #7A5E1C;
+    --buy: #34D399; --sell: #FB6F6F; --radius: 14px; font-size: 16px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; min-height: 100vh; }
+  h1, h2, .display { font-family: 'Sora', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  header.topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 18px 28px; border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; }
+  .coin-mark {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #FFD666, var(--gold) 60%, var(--gold-dim) 100%);
+  }
+  .badge {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    background: rgba(240,180,41,0.12); color: var(--gold); padding: 3px 8px; border-radius: 5px;
+  }
+  nav { display: flex; gap: 6px; align-items: center; }
+  nav a { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; }
+  #signOutBtn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 12px; padding: 7px 12px; border-radius: 8px; cursor: pointer; }
+
+  main { max-width: 1000px; margin: 0 auto; padding: 24px 20px 60px; display: grid; gap: 20px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin: 0 0 14px; }
+
+  .price-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .price-row .current { font-size: 26px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .price-row input {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    font-family: 'JetBrains Mono', monospace; font-size: 15px; padding: 9px 12px; border-radius: 8px; width: 140px;
+  }
+  .btn {
+    border: none; border-radius: 8px; padding: 9px 16px; font-family: 'Sora', sans-serif;
+    font-weight: 700; font-size: 13px; cursor: pointer; background: var(--gold); color: #1A1305;
+  }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn.secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-family: 'JetBrains Mono', monospace; }
+  .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 5px; }
+  .tag.buy { background: rgba(52,211,153,0.15); color: var(--buy); }
+  .tag.sell { background: rgba(251,111,111,0.15); color: var(--sell); }
+
+  .adjust-form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .adjust-form input {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 6px 8px; border-radius: 6px; width: 90px;
+  }
+  .adjust-form input.reason { width: 130px; font-family: 'Inter', sans-serif; }
+  .adjust-form button { font-size: 11px; padding: 6px 10px; }
+
+  .status { font-size: 13px; margin-top: 10px; min-height: 16px; }
+  .status.error { color: var(--sell); }
+  .status.success { color: var(--buy); }
+
+  .empty { color: var(--text-muted); font-size: 13px; padding: 10px 0; }
+  .gate-msg { text-align: center; padding: 80px 20px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div id="app" style="display:none;">
+  <header class="topbar">
+    <div class="brand"><span class="coin-mark"></span><span>Exchange</span><span class="badge">Admin</span></div>
+    <nav>
+      <a href="market.html">Market</a>
+      <a href="trade.html">Trade</a>
+      <button id="signOutBtn">Sign out</button>
+    </nav>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>Coin price</h2>
+      <div class="price-row">
+        <span class="current mono" id="currentPrice">KES 0.00</span>
+        <input type="number" id="newPrice" step="0.00000001" min="0" placeholder="New price" />
+        <button class="btn" id="setPriceBtn">Update price</button>
+      </div>
+      <div class="status" id="priceStatus"></div>
+    </div>
+
+    <div class="card">
+      <h2>Users &amp; wallets</h2>
+      <table>
+        <thead>
+          <tr><th>Email</th><th>Joined</th><th>Fiat</th><th>Coins</th><th>Adjust</th></tr>
+        </thead>
+        <tbody id="usersBody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table>
+      <div class="status" id="usersStatus"></div>
+    </div>
+
+    <div class="card">
+      <h2>Pending deposit &amp; withdrawal requests</h2>
+      <table>
+        <thead><tr><th>User</th><th>Type</th><th>Method</th><th>Amount</th><th>Detail</th><th>When</th><th>Action</th></tr></thead>
+        <tbody id="fiatReqBody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+      </table>
+      <div class="status" id="fiatReqStatus"></div>
+    </div>
+
+    <div class="card">
+      <h2>Recent transactions</h2>
+      <table>
+        <thead><tr><th>Type</th><th>Coins</th><th>Fiat</th><th>Price</th><th>When</th></tr></thead>
+        <tbody id="txnsBody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Audit log</h2>
+      <table>
+        <thead><tr><th>Action</th><th>Details</th><th>When</th></tr></thead>
+        <tbody id="auditBody"><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<div id="gate" class="gate-msg">Checking access…</div>
+
+<script>
+  const SUPABASE_URL = "https://nfrrcvqlbeqtivgpjkwf.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_LmGTKVphP1BnXrv1MVgYig_QImgQ_Rd";
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const el = (id) => document.getElementById(id);
+
+  function fmtFiat(n) { return "KES " + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function fmtCoin(n) { return Number(n).toFixed(8); }
+  function fmtDate(s) { return new Date(s).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+
+  async function loadPrice() {
+    const { data } = await client.from("coin_price").select("price").eq("id", 1).single();
+    if (data) el("currentPrice").textContent = fmtFiat(data.price);
+  }
+
+  async function loadUsers() {
+    const { data, error } = await client.rpc("admin_list_users");
+    const body = el("usersBody");
+    if (error) { body.innerHTML = `<tr><td colspan="5" class="empty">${error.message}</td></tr>`; return; }
+    if (!data || !data.length) { body.innerHTML = `<tr><td colspan="5" class="empty">No users yet</td></tr>`; return; }
+    body.innerHTML = data.map(u => `
+      <tr data-uid="${u.user_id}">
+        <td>${u.email || "—"}</td>
+        <td>${fmtDate(u.created_at)}</td>
+        <td class="num">${fmtFiat(u.fiat_balance)}</td>
+        <td class="num">${fmtCoin(u.coin_balance)}</td>
+        <td>
+          <div class="adjust-form">
+            <input type="number" class="fiat-delta" placeholder="±Fiat" step="0.01" />
+            <input type="number" class="coin-delta" placeholder="±Coins" step="0.00000001" />
+            <input type="text" class="reason" placeholder="Reason" />
+            <button class="btn secondary apply-btn">Apply</button>
+          </div>
+        </td>
+      </tr>
+    `).join("");
+
+    body.querySelectorAll(".apply-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest("tr");
+        const uid = row.dataset.uid;
+        const fiatDelta = parseFloat(row.querySelector(".fiat-delta").value) || 0;
+        const coinDelta = parseFloat(row.querySelector(".coin-delta").value) || 0;
+        const reason = row.querySelector(".reason").value || "manual adjustment";
+        if (!fiatDelta && !coinDelta) { setStatus("usersStatus", "Enter a fiat or coin amount", "error"); return; }
+        btn.disabled = true;
+        const { error } = await client.rpc("admin_adjust_wallet", {
+          p_user_id: uid, p_fiat_delta: fiatDelta, p_coin_delta: coinDelta, p_reason: reason,
+        });
+        btn.disabled = false;
+        if (error) { setStatus("usersStatus", error.message, "error"); return; }
+        setStatus("usersStatus", "Wallet updated", "success");
+        loadUsers();
+        loadAudit();
+      });
+    });
+  }
+
+  async function loadTxns() {
+    const { data, error } = await client.from("transactions")
+      .select("type, coin_amount, fiat_amount, price_at_execution, created_at")
+      .order("created_at", { ascending: false }).limit(20);
+    const body = el("txnsBody");
+    if (error) { body.innerHTML = `<tr><td colspan="5" class="empty">${error.message}</td></tr>`; return; }
+    if (!data || !data.length) { body.innerHTML = `<tr><td colspan="5" class="empty">No transactions yet</td></tr>`; return; }
+    body.innerHTML = data.map(t => `
+      <tr>
+        <td><span class="tag ${t.type}">${t.type.toUpperCase()}</span></td>
+        <td class="num">${fmtCoin(t.coin_amount)}</td>
+        <td class="num">${fmtFiat(t.fiat_amount)}</td>
+        <td class="num">${fmtFiat(t.price_at_execution)}</td>
+        <td>${fmtDate(t.created_at)}</td>
+      </tr>
+    `).join("");
+  }
+
+  async function loadAudit() {
+    const { data, error } = await client.from("audit_logs")
+      .select("action, details, created_at")
+      .order("created_at", { ascending: false }).limit(20);
+    const body = el("auditBody");
+    if (error) { body.innerHTML = `<tr><td colspan="3" class="empty">${error.message}</td></tr>`; return; }
+    if (!data || !data.length) { body.innerHTML = `<tr><td colspan="3" class="empty">No activity yet</td></tr>`; return; }
+    body.innerHTML = data.map(a => `
+      <tr>
+        <td>${a.action}</td>
+        <td class="num" style="font-size:11px;color:var(--text-muted);">${JSON.stringify(a.details)}</td>
+        <td>${fmtDate(a.created_at)}</td>
+      </tr>
+    `).join("");
+  }
+
+  async function loadFiatRequests() {
+    const { data, error } = await client.from("fiat_requests")
+      .select("id, user_id, type, method, amount, phone, crypto_address, created_at")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false });
+    const body = el("fiatReqBody");
+    if (error) { body.innerHTML = `<tr><td colspan="7" class="empty">${error.message}</td></tr>`; return; }
+    if (!data || !data.length) { body.innerHTML = `<tr><td colspan="7" class="empty">No pending requests</td></tr>`; return; }
+    body.innerHTML = data.map(r => `
+      <tr data-rid="${r.id}">
+        <td style="font-size:11px;color:var(--text-muted);">${r.user_id.slice(0,8)}…</td>
+        <td><span class="tag ${r.type === 'deposit' ? 'buy' : 'sell'}">${r.type.toUpperCase()}</span></td>
+        <td>${r.method}</td>
+        <td class="num">${fmtFiat(r.amount)}</td>
+        <td style="font-size:11px;color:var(--text-muted);">${r.phone || r.crypto_address || "—"}</td>
+        <td>${fmtDate(r.created_at)}</td>
+        <td>
+          <button class="btn secondary approve-btn" style="margin-right:4px;">Approve</button>
+          <button class="btn secondary reject-btn">Reject</button>
+        </td>
+      </tr>
+    `).join("");
+
+    body.querySelectorAll(".approve-btn, .reject-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest("tr");
+        const rid = row.dataset.rid;
+        const approve = btn.classList.contains("approve-btn");
+        row.querySelectorAll("button").forEach(b => b.disabled = true);
+        const { error } = await client.rpc("admin_process_fiat_request", { p_request_id: rid, p_approve: approve });
+        if (error) { setStatus("fiatReqStatus", error.message, "error"); row.querySelectorAll("button").forEach(b => b.disabled = false); return; }
+        setStatus("fiatReqStatus", approve ? "Request approved" : "Request rejected", "success");
+        loadFiatRequests();
+        loadUsers();
+        loadAudit();
+      });
+    });
+  }
+
+  function setStatus(id, message, type) {
+    const s = el(id);
+    s.textContent = message;
+    s.className = "status" + (type ? " " + type : "");
+  }
+
+  el("setPriceBtn").addEventListener("click", async () => {
+    const price = parseFloat(el("newPrice").value);
+    if (!price || price <= 0) { setStatus("priceStatus", "Enter a positive price", "error"); return; }
+    el("setPriceBtn").disabled = true;
+    const { error } = await client.rpc("admin_set_price", { p_price: price });
+    el("setPriceBtn").disabled = false;
+    if (error) { setStatus("priceStatus", error.message, "error"); return; }
+    setStatus("priceStatus", "Price updated", "success");
+    el("newPrice").value = "";
+    loadPrice();
+  });
+
+  (async function gate() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) {
+      window.location.href = "index.html?redirect=admin.html";
+      return;
+    }
+    const { data: isAdmin, error } = await client.rpc("is_admin");
+    if (error || !isAdmin) {
+      el("gate").textContent = "You don't have admin access on this account.";
+      return;
+    }
+    el("gate").style.display = "none";
+    el("app").style.display = "block";
+    el("signOutBtn").addEventListener("click", async () => {
+      await client.auth.signOut();
+      window.location.href = "index.html";
+    });
+    loadPrice();
+    loadUsers();
+    loadTxns();
+    loadAudit();
+    loadFiatRequests();
+  })();
+</script>
+
+</body>
+</html>

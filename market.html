@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Market — Coin Exchange</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #F6F7FA; --surface: #FFFFFF; --surface-2: #F0F2F6; --border: #E2E6ED;
+    --text: #14171F; --text-muted: #6B7280; --gold: #B45309; --gold-soft: #FEF3E2;
+    --buy: #16A34A; --buy-soft: #E7F7EC; --sell: #DC2626; --sell-soft: #FDECEC;
+    --radius: 14px; font-size: 16px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; min-height: 100vh; }
+  h1, h2, .display { font-family: 'Sora', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  header.topbar { display: flex; justify-content: space-between; align-items: center; padding: 20px 28px; max-width: 980px; margin: 0 auto; flex-wrap: wrap; gap: 10px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; }
+  .coin-mark { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #FFD666, var(--gold) 60%, #7A4A0C 100%); }
+  nav { display: flex; gap: 6px; align-items: center; }
+  nav a { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; }
+  nav a.active { color: #fff; background: var(--gold); }
+  #signOutBtn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 12px; padding: 7px 12px; border-radius: 8px; cursor: pointer; }
+
+  main { max-width: 980px; margin: 0 auto 60px; padding: 0 20px; display: grid; gap: 20px; grid-template-columns: 1fr; }
+  @media (min-width: 860px) { main { grid-template-columns: 2fr 1fr; } .full-width { grid-column: 1 / -1; } }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 18px 14px; box-shadow: 0 1px 2px rgba(20,23,31,0.04); }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin: 0 0 12px; font-weight: 600; }
+
+  .stats-row { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .stats-row .price-value { font-size: 32px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .stats-row .change { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 500; padding: 3px 9px; border-radius: 6px; }
+  .change.up { color: var(--buy); background: var(--buy-soft); }
+  .change.down { color: var(--sell); background: var(--sell-soft); }
+  .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--buy); margin-right: 5px; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .mini-stats { display: flex; gap: 20px; margin-left: auto; font-size: 12px; color: var(--text-muted); }
+  .mini-stats b { color: var(--text); font-family: 'JetBrains Mono', monospace; display: block; font-size: 13px; margin-top: 2px; }
+
+  .chart-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+  .timeframes { display: flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .timeframes button { border: none; background: transparent; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  .timeframes button.active { background: var(--gold); color: #fff; }
+  .predict-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+  .predict-toggle input { accent-color: var(--gold); }
+
+  canvas { display: block; width: 100%; touch-action: none; cursor: crosshair; }
+  #priceCanvas { height: 300px; }
+  #volumeCanvas { height: 64px; margin-top: 2px; }
+
+  .chart-wrap { position: relative; }
+  .tooltip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.6; color: var(--text); display: none; z-index: 10; white-space: nowrap; box-shadow: 0 2px 8px rgba(20,23,31,0.08); }
+  .tooltip .t-row { display: flex; justify-content: space-between; gap: 14px; }
+  .tooltip .t-label { color: var(--text-muted); }
+
+  .predict-note { font-size: 11px; color: var(--text-muted); margin-top: 8px; line-height: 1.5; }
+  .predict-note b { color: var(--gold); }
+
+  /* Investment panel */
+  .invest-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .invest-row:last-child { border-bottom: none; }
+  .invest-row span:first-child { color: var(--text-muted); }
+  .invest-row b { font-family: 'JetBrains Mono', monospace; }
+  .invest-total { font-size: 24px; font-weight: 700; font-family: 'JetBrains Mono', monospace; margin: 4px 0; }
+  .invest-gain { font-size: 13px; font-family: 'JetBrains Mono', monospace; padding: 2px 8px; border-radius: 6px; display: inline-block; }
+
+  /* Markets list */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 9px 8px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  .coin-name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .coin-dot { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; }
+  td.num { font-family: 'JetBrains Mono', monospace; text-align: right; }
+  .ref-tag { font-size: 10px; color: var(--text-muted); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+  .gate-msg { text-align: center; padding: 80px 20px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div id="app" style="display:none;">
+<header class="topbar">
+  <div class="brand"><span class="coin-mark"></span><span>Exchange</span></div>
+  <nav>
+    <a href="market.html" class="active">Market</a>
+    <a href="trade.html">Trade</a>
+    <button id="signOutBtn">Sign out</button>
+  </nav>
+</header>
+
+<main>
+  <div class="card full-width">
+    <div class="stats-row">
+      <div>
+        <div class="price-value mono" id="currentPrice"><span class="live-dot"></span>KES 0.00</div>
+      </div>
+      <div class="change up" id="priceChange">—</div>
+      <div class="mini-stats">
+        <div>24h High<b id="statHigh">—</b></div>
+        <div>24h Low<b id="statLow">—</b></div>
+        <div>24h Volume<b id="statVolume">—</b></div>
+      </div>
+    </div>
+
+    <div class="chart-controls">
+      <div class="timeframes" id="timeframes">
+        <button data-tf="1H">1H</button>
+        <button data-tf="1D" class="active">1D</button>
+        <button data-tf="1W">1W</button>
+        <button data-tf="1M">1M</button>
+        <button data-tf="ALL">ALL</button>
+      </div>
+      <label class="predict-toggle"><input type="checkbox" id="predictToggle" checked /> Show trend projection</label>
+    </div>
+
+    <div class="chart-wrap">
+      <canvas id="priceCanvas"></canvas>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+    <canvas id="volumeCanvas"></canvas>
+    <div class="predict-note" id="predictNote"></div>
+  </div>
+
+  <div class="card">
+    <h2>Your investment</h2>
+    <div class="invest-total" id="investValue">KES 0.00</div>
+    <div class="invest-gain" id="investGain">—</div>
+    <div style="margin-top:14px;">
+      <div class="invest-row"><span>Coins held</span><b id="investCoins">0.00000000</b></div>
+      <div class="invest-row"><span>Net invested</span><b id="investInvested">KES 0.00</b></div>
+      <div class="invest-row"><span>Avg buy price</span><b id="investAvg">—</b></div>
+    </div>
+  </div>
+
+  <div class="card full-width">
+    <h2>Markets</h2>
+    <table>
+      <thead><tr><th>Coin</th><th class="num">Price</th><th class="num">24h</th></tr></thead>
+      <tbody id="marketsBody"></tbody>
+    </table>
+  </div>
+</main>
+</div>
+
+<div id="gate" class="gate-msg">Loading market…</div>
+
+<script>
+  const SUPABASE_URL = "https://nfrrcvqlbeqtivgpjkwf.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_LmGTKVphP1BnXrv1MVgYig_QImgQ_Rd";
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const el = (id) => document.getElementById(id);
+  function fmtFiat(n) { return "KES " + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function fmtVol(n) { return n >= 1000 ? (n / 1000).toFixed(1) + "k" : n.toFixed(0); }
+  function fmtTime(t) { return new Date(t).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+
+  const TIMEFRAMES = {
+    "1H": { ms: 60 * 60 * 1000, bucketMs: 60 * 1000 },
+    "1D": { ms: 24 * 60 * 60 * 1000, bucketMs: 15 * 60 * 1000 },
+    "1W": { ms: 7 * 24 * 60 * 60 * 1000, bucketMs: 60 * 60 * 1000 },
+    "1M": { ms: 30 * 24 * 60 * 60 * 1000, bucketMs: 8 * 60 * 60 * 1000 },
+    "ALL": { ms: Infinity, bucketMs: 24 * 60 * 60 * 1000 },
+  };
+
+  let currentTF = "1D";
+  let rawPoints = [];   // { t, price } from price history + trades
+  let rawTrades = [];   // { t, coin_amount, type }
+  let series = [];      // bucketed candles
+  let currentPrice = 0;
+  let showPredict = true;
+
+  // Static reference-only snapshot (no live external market data feed
+  // wired in yet) — approximate BTC/ETH/USDT as of mid-July 2026.
+  const REFERENCE_COINS = [
+    { name: "Bitcoin", symbol: "BTC", price: 63500, change: -1.4, color: "#F7931A" },
+    { name: "Ethereum", symbol: "ETH", price: 1850, change: 1.5, color: "#627EEA" },
+    { name: "Tether", symbol: "USDT", price: 1.00, change: 0.0, color: "#26A17B" },
+  ];
+
+  function buildCandles(points, bucketMs, windowStart) {
+    const buckets = new Map();
+    points.filter(p => p.t >= windowStart).forEach(p => {
+      const key = Math.floor(p.t / bucketMs) * bucketMs;
+      if (!buckets.has(key)) buckets.set(key, { t: key, o: p.price, h: p.price, l: p.price, c: p.price, v: 0 });
+      const b = buckets.get(key);
+      b.h = Math.max(b.h, p.price);
+      b.l = Math.min(b.l, p.price);
+      b.c = p.price;
+    });
+    rawTrades.filter(tr => tr.t >= windowStart).forEach(tr => {
+      const key = Math.floor(tr.t / bucketMs) * bucketMs;
+      if (buckets.has(key)) buckets.get(key).v += tr.coin_amount;
+    });
+    return Array.from(buckets.values()).sort((a, b) => a.t - b.t);
+  }
+
+  function linearTrend(candles) {
+    // Simple least-squares fit over the visible candles' closes —
+    // a statistical projection, not a prediction of real future price.
+    if (candles.length < 2) return null;
+    const n = candles.length;
+    const xs = candles.map((_, i) => i);
+    const ys = candles.map(c => c.c);
+    const meanX = xs.reduce((a, b) => a + b, 0) / n;
+    const meanY = ys.reduce((a, b) => a + b, 0) / n;
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) { num += (xs[i] - meanX) * (ys[i] - meanY); den += (xs[i] - meanX) ** 2; }
+    const slope = den === 0 ? 0 : num / den;
+    const intercept = meanY - slope * meanX;
+    return { slope, intercept };
+  }
+
+  function refreshSeries() {
+    const cfg = TIMEFRAMES[currentTF];
+    const windowStart = cfg.ms === Infinity ? 0 : Date.now() - cfg.ms;
+    series = buildCandles(rawPoints, cfg.bucketMs, windowStart);
+    if (!series.length && currentPrice) {
+      series = [{ t: Date.now(), o: currentPrice, h: currentPrice, l: currentPrice, c: currentPrice, v: 0 }];
+    }
+  }
+
+  // Applies one live price tick (from the coin_price Realtime UPDATE) directly
+  // onto the in-memory candle series, instead of appending a raw point and
+  // waiting for the next full rebuild. If the tick lands in the same bucket
+  // as the current last candle, that candle's high/low/close are extended.
+  // If it starts a new bucket, a fresh candle opens exactly at the previous
+  // candle's close — so the candle body always matches the database price,
+  // with no gap or mismatch introduced by generic bucket rebucketing.
+  function applyLiveTick(price, ts) {
+    const cfg = TIMEFRAMES[currentTF];
+    const bucketKey = Math.floor(ts / cfg.bucketMs) * cfg.bucketMs;
+
+    if (!series.length) {
+      series = [{ t: bucketKey, o: price, h: price, l: price, c: price, v: 0 }];
+    } else {
+      const last = series[series.length - 1];
+      if (last.t === bucketKey) {
+        last.h = Math.max(last.h, price);
+        last.l = Math.min(last.l, price);
+        last.c = price;
+      } else {
+        series.push({ t: bucketKey, o: last.c, h: price, l: price, c: price, v: 0 });
+      }
+    }
+
+    // Drop candles that have aged out of the current timeframe window.
+    if (cfg.ms !== Infinity) {
+      const windowStart = Date.now() - cfg.ms;
+      while (series.length > 1 && series[0].t < windowStart) series.shift();
+    }
+  }
+
+  const priceCanvas = el("priceCanvas");
+  const volumeCanvas = el("volumeCanvas");
+  const priceCtx = priceCanvas.getContext("2d");
+  const volumeCtx = volumeCanvas.getContext("2d");
+  const tooltip = el("tooltip");
+
+  function resizeCanvas(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: rect.width, h: rect.height };
+  }
+
+  function drawChart() {
+    const { w, h } = resizeCanvas(priceCanvas);
+    priceCtx.clearRect(0, 0, w, h);
+    if (!series.length) {
+      priceCtx.fillStyle = "#6B7280";
+      priceCtx.font = "13px 'Inter', sans-serif";
+      priceCtx.textAlign = "center";
+      priceCtx.fillText("No price data yet — check console for details", w / 2, h / 2);
+      priceCtx.textAlign = "left";
+      return;
+    }
+
+    const padding = { top: 14, right: 56, bottom: 8 };
+    const plotW = w - padding.right;
+    const plotH = h - padding.top - padding.bottom;
+
+    const trend = showPredict ? linearTrend(series) : null;
+    const projectedCount = Math.max(3, Math.round(series.length * 0.2));
+    const totalSlots = series.length + (trend ? projectedCount : 0);
+
+    const highs = series.map(d => d.h);
+    const lows = series.map(d => d.l);
+    let maxP = Math.max(...highs);
+    let minP = Math.min(...lows);
+    if (trend) {
+      for (let i = 0; i < projectedCount; i++) {
+        const proj = trend.intercept + trend.slope * (series.length - 1 + i);
+        maxP = Math.max(maxP, proj);
+        minP = Math.min(minP, proj);
+      }
+    }
+    const range = maxP - minP || Math.max(1, maxP * 0.05);
+    maxP += range * 0.1;
+    minP -= range * 0.1;
+
+    const candleSlot = plotW / totalSlots;
+    const candleW = Math.max(2, candleSlot * 0.6);
+    const yFor = (price) => padding.top + (1 - (price - minP) / (maxP - minP)) * plotH;
+
+    priceCtx.strokeStyle = "#EEF0F4";
+    priceCtx.lineWidth = 1;
+    priceCtx.font = "11px 'JetBrains Mono', monospace";
+    priceCtx.fillStyle = "#6B7280";
+    for (let i = 0; i <= 5; i++) {
+      const price = minP + ((maxP - minP) * i) / 5;
+      const y = yFor(price);
+      priceCtx.beginPath(); priceCtx.moveTo(0, y); priceCtx.lineTo(w - padding.right, y); priceCtx.stroke();
+      priceCtx.fillText(fmtFiat(price), w - padding.right + 6, y + 3);
+    }
+
+    series.forEach((d, i) => {
+      const x = i * candleSlot + candleSlot / 2;
+      const up = d.c >= d.o;
+      priceCtx.strokeStyle = priceCtx.fillStyle = up ? "#16A34A" : "#DC2626";
+      priceCtx.beginPath(); priceCtx.moveTo(x, yFor(d.h)); priceCtx.lineTo(x, yFor(d.l)); priceCtx.stroke();
+      const bodyTop = yFor(Math.max(d.o, d.c));
+      const bodyBottom = yFor(Math.min(d.o, d.c));
+      priceCtx.fillRect(x - candleW / 2, bodyTop, candleW, Math.max(1, bodyBottom - bodyTop));
+    });
+
+    if (trend) {
+      priceCtx.save();
+      priceCtx.strokeStyle = "#B45309";
+      priceCtx.lineWidth = 1.5;
+      priceCtx.setLineDash([5, 4]);
+      priceCtx.beginPath();
+      for (let i = 0; i < projectedCount; i++) {
+        const idx = series.length - 1 + i;
+        const x = idx * candleSlot + candleSlot / 2;
+        const y = yFor(trend.intercept + trend.slope * idx);
+        if (i === 0) priceCtx.moveTo(x, y); else priceCtx.lineTo(x, y);
+      }
+      priceCtx.stroke();
+      priceCtx.restore();
+
+      const lastProj = trend.intercept + trend.slope * (series.length - 1 + projectedCount - 1);
+      el("predictNote").innerHTML = `<b>Trend projection</b> — a simple statistical extrapolation of recent candles (linear fit), not a prediction of real future price. Projected trajectory: ${fmtFiat(lastProj)}. Not financial advice.`;
+    } else {
+      el("predictNote").textContent = "";
+    }
+
+    priceCanvas._meta = { candleSlot };
+  }
+
+  function drawVolume() {
+    const { w, h } = resizeCanvas(volumeCanvas);
+    volumeCtx.clearRect(0, 0, w, h);
+    if (!series.length) return;
+    const padding = { right: 56 };
+    const plotW = w - padding.right;
+    const candleSlot = plotW / series.length;
+    const candleW = Math.max(2, candleSlot * 0.6);
+    const maxV = Math.max(...series.map(d => d.v), 0.0001);
+    series.forEach((d, i) => {
+      const x = i * candleSlot + candleSlot / 2;
+      const up = d.c >= d.o;
+      volumeCtx.fillStyle = up ? "rgba(22,163,74,0.35)" : "rgba(220,38,38,0.35)";
+      const barH = (d.v / maxV) * (h - 4);
+      volumeCtx.fillRect(x - candleW / 2, h - barH, candleW, barH);
+    });
+  }
+
+  function updateStats() {
+    if (!series.length) return;
+    const last = series[series.length - 1];
+    const first = series[0];
+    const changePct = first.o ? ((last.c - first.o) / first.o) * 100 : 0;
+    const high = Math.max(...series.map(d => d.h));
+    const low = Math.min(...series.map(d => d.l));
+    const volume = series.reduce((a, d) => a + d.v, 0);
+
+    el("currentPrice").innerHTML = `<span class="live-dot"></span>${fmtFiat(last.c)}`;
+    const changeEl = el("priceChange");
+    changeEl.textContent = (changePct >= 0 ? "▲ " : "▼ ") + Math.abs(changePct).toFixed(2) + "%";
+    changeEl.className = "change " + (changePct >= 0 ? "up" : "down");
+    el("statHigh").textContent = fmtFiat(high);
+    el("statLow").textContent = fmtFiat(low);
+    el("statVolume").textContent = fmtVol(volume) + " coins";
+  }
+
+  function render() {
+    refreshSeries();
+    drawChart();
+    drawVolume();
+    updateStats();
+  }
+
+  priceCanvas.addEventListener("mousemove", (e) => {
+    const meta = priceCanvas._meta;
+    if (!meta || !series.length) return;
+    const rect = priceCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const idx = Math.min(series.length - 1, Math.max(0, Math.floor(x / meta.candleSlot)));
+    const d = series[idx];
+    if (!d) return;
+    tooltip.style.display = "block";
+    tooltip.style.left = Math.min(rect.width - 150, Math.max(0, x + 12)) + "px";
+    tooltip.style.top = "10px";
+    tooltip.innerHTML = `
+      <div class="t-row"><span class="t-label">${fmtTime(d.t)}</span></div>
+      <div class="t-row"><span class="t-label">O</span><span>${fmtFiat(d.o)}</span></div>
+      <div class="t-row"><span class="t-label">H</span><span>${fmtFiat(d.h)}</span></div>
+      <div class="t-row"><span class="t-label">L</span><span>${fmtFiat(d.l)}</span></div>
+      <div class="t-row"><span class="t-label">C</span><span>${fmtFiat(d.c)}</span></div>
+      <div class="t-row"><span class="t-label">Vol</span><span>${fmtVol(d.v)}</span></div>
+    `;
+  });
+  priceCanvas.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+
+  el("timeframes").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-tf]");
+    if (!btn) return;
+    document.querySelectorAll("#timeframes button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentTF = btn.dataset.tf;
+    render();
+  });
+  el("predictToggle").addEventListener("change", (e) => { showPredict = e.target.checked; render(); });
+  window.addEventListener("resize", render);
+
+  function renderMarkets() {
+    const rows = [
+      { name: "Your Coin", symbol: "COIN", price: currentPrice, change: series.length > 1 ? ((series[series.length-1].c - series[0].o) / series[0].o) * 100 : 0, color: "#F0B429", isOwn: true },
+      ...REFERENCE_COINS,
+    ];
+    el("marketsBody").innerHTML = rows.map(c => `
+      <tr>
+        <td><div class="coin-name"><span class="coin-dot" style="background:${c.color}"></span>${c.name} <span style="color:var(--text-muted);font-weight:400;">${c.symbol}</span>${c.isOwn ? "" : '<span class="ref-tag">reference</span>'}</div></td>
+        <td class="num">${c.symbol === "USDT" ? "$" + c.price.toFixed(2) : (c.isOwn ? fmtFiat(c.price) : "$" + c.price.toLocaleString())}</td>
+        <td class="num" style="color:${c.change >= 0 ? 'var(--buy)' : 'var(--sell)'}">${c.change >= 0 ? "▲" : "▼"} ${Math.abs(c.change).toFixed(2)}%</td>
+      </tr>
+    `).join("");
+  }
+
+  async function loadInvestment(userId) {
+    const [{ data: wallet }, { data: txns }] = await Promise.all([
+      client.from("wallets").select("coin_balance").eq("user_id", userId).maybeSingle(),
+      client.from("transactions").select("type, coin_amount, fiat_amount").eq("user_id", userId),
+    ]);
+    const coinBalance = wallet ? Number(wallet.coin_balance) : 0;
+    let buyFiat = 0, buyCoins = 0, sellFiat = 0;
+    (txns || []).forEach(t => {
+      if (t.type === "buy") { buyFiat += Number(t.fiat_amount); buyCoins += Number(t.coin_amount); }
+      else { sellFiat += Number(t.fiat_amount); }
+    });
+    const netInvested = buyFiat - sellFiat;
+    const currentValue = coinBalance * currentPrice;
+    const avgBuyPrice = buyCoins > 0 ? buyFiat / buyCoins : null;
+    const gain = currentValue - netInvested;
+    const gainPct = netInvested > 0 ? (gain / netInvested) * 100 : 0;
+
+    el("investValue").textContent = fmtFiat(currentValue);
+    const gainEl = el("investGain");
+    if (netInvested > 0) {
+      gainEl.textContent = (gain >= 0 ? "▲ " : "▼ ") + fmtFiat(Math.abs(gain)) + " (" + Math.abs(gainPct).toFixed(2) + "%)";
+      gainEl.className = "invest-gain " + (gain >= 0 ? "change up" : "change down");
+    } else {
+      gainEl.textContent = "No trades yet";
+      gainEl.className = "invest-gain";
+    }
+    el("investCoins").textContent = coinBalance.toFixed(8);
+    el("investInvested").textContent = fmtFiat(netInvested);
+    el("investAvg").textContent = avgBuyPrice ? fmtFiat(avgBuyPrice) : "—";
+  }
+
+  async function loadMarketData() {
+    const [priceRes, historyRes, tradesRes] = await Promise.all([
+      client.from("coin_price").select("price").eq("id", 1).maybeSingle(),
+      client.from("coin_price_history").select("price, created_at").order("created_at", { ascending: true }).limit(1000),
+      client.rpc("get_market_trades", { p_limit: 1000 }),
+    ]);
+
+    // Surface any failure instead of silently ending up with an empty chart.
+    if (priceRes.error) console.error("coin_price fetch failed:", priceRes.error.message, priceRes.error);
+    if (historyRes.error) console.error("coin_price_history fetch failed:", historyRes.error.message, historyRes.error);
+    if (tradesRes.error) console.error("get_market_trades RPC failed:", tradesRes.error.message, tradesRes.error);
+    if (!priceRes.data) console.warn("No row found in coin_price for id=1 (or RLS is blocking anon SELECT) — chart has no current price to plot.");
+
+    const priceRow = priceRes.data;
+    const history = historyRes.data;
+    const trades = tradesRes.data;
+
+    currentPrice = priceRow ? Number(priceRow.price) : 0;
+
+    const historyPoints = (history || []).map(h => ({ t: new Date(h.created_at).getTime(), price: Number(h.price) }));
+    const tradePoints = (trades || []).map(t => ({ t: new Date(t.created_at).getTime(), price: Number(t.price_at_execution) }));
+    rawPoints = [...historyPoints, ...tradePoints].sort((a, b) => a.t - b.t);
+    if (currentPrice) rawPoints.push({ t: Date.now(), price: currentPrice });
+
+    rawTrades = (trades || []).map(t => ({ t: new Date(t.created_at).getTime(), coin_amount: Number(t.coin_amount), type: t.type }));
+
+    render();
+    renderMarkets();
+  }
+
+  (async function init() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) { window.location.href = "index.html?redirect=market.html"; return; }
+
+    el("gate").style.display = "none";
+    el("app").style.display = "block";
+    el("signOutBtn").addEventListener("click", async () => { await client.auth.signOut(); window.location.href = "index.html"; });
+
+    await loadMarketData();
+    await loadInvestment(session.user.id);
+
+    client.channel("market-price-changes")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "coin_price" }, (payload) => {
+        const ts = Date.now();
+        currentPrice = Number(payload.new.price);
+
+        // Keep rawPoints in sync too, so timeframe switches (which do a
+        // full buildCandles rebuild) still see this tick.
+        rawPoints.push({ t: ts, price: currentPrice });
+
+        // Update the live candle directly from the database price.
+        applyLiveTick(currentPrice, ts);
+        drawChart();
+        drawVolume();
+        updateStats();
+
+        renderMarkets();
+        loadInvestment(session.user.id);
+      })
+      .subscribe();
+  })();
+</script>
+
+</body>
+</html>
