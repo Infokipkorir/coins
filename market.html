@@ -314,7 +314,21 @@
     }
   }
 
-  const priceCanvas = el("priceCanvas");
+  // Robust price range using median absolute deviation, so a single bad
+  // data point (e.g. a stray test row miles away from the real price)
+  // can't stretch the whole y-axis and flatten every other candle.
+  function robustPriceRange(candles) {
+    const closes = candles.map(c => c.c).filter(Number.isFinite);
+    if (!closes.length) return null;
+    const sorted = [...closes].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const devs = closes.map(v => Math.abs(v - median)).sort((a, b) => a - b);
+    const mad = devs[Math.floor(devs.length / 2)] || 0;
+    // Minimum spread guards against a near-zero MAD (e.g. a flat market)
+    // collapsing the axis to nothing.
+    const spread = Math.max(mad * 6, Math.abs(median) * 0.05, 1);
+    return { low: median - spread, high: median + spread, median, spread };
+  }
   const volumeCanvas = el("volumeCanvas");
   const priceCtx = priceCanvas.getContext("2d");
   const volumeCtx = volumeCanvas.getContext("2d");
@@ -361,11 +375,29 @@
 
     const highs = series.map(d => d.h);
     const lows = series.map(d => d.l);
-    let maxP = Math.max(...highs, ...boll.upper);
-    let minP = Math.min(...lows, ...boll.lower);
+    const robust = robustPriceRange(series);
+    let maxP, minP;
+    if (robust) {
+      // Start from the outlier-resistant bounds, then let the Bollinger
+      // bands/trend line nudge them out a bit — but never let a single
+      // wild high/low candle (more than double the robust spread away)
+      // do so, since that's exactly the case we're guarding against.
+      const cap = robust.spread * 2;
+      maxP = robust.high;
+      minP = robust.low;
+      [...boll.upper, ...boll.lower].forEach(v => {
+        if (!Number.isFinite(v)) return;
+        if (v > maxP && v - robust.median <= cap) maxP = v;
+        if (v < minP && robust.median - v <= cap) minP = v;
+      });
+    } else {
+      maxP = Math.max(...highs, ...boll.upper);
+      minP = Math.min(...lows, ...boll.lower);
+    }
     if (trend) {
       for (let i = 0; i < projectedCount; i++) {
         const proj = trend.intercept + trend.slope * (series.length - 1 + i);
+        if (robust && Math.abs(proj - robust.median) > robust.spread * 2) continue; // ignore runaway projections
         maxP = Math.max(maxP, proj);
         minP = Math.min(minP, proj);
       }
@@ -378,6 +410,7 @@
     const candleW = Math.max(2, candleSlot * 0.6);
     const xFor = (i) => i * candleSlot + candleSlot / 2;
     const yFor = (price) => padding.top + (1 - (price - minP) / (maxP - minP)) * plotH;
+    const yForClamped = (price) => Math.min(Math.max(yFor(price), padding.top), padding.top + plotH);
 
     // Dotted grid + price axis labels
     priceCtx.strokeStyle = "#1B2230";
@@ -399,7 +432,7 @@
     [boll.upper, boll.lower].forEach(bandArr => {
       priceCtx.beginPath();
       bandArr.forEach((v, i) => {
-        const x = xFor(i), y = yFor(v);
+        const x = xFor(i), y = yForClamped(v);
         if (i === 0) priceCtx.moveTo(x, y); else priceCtx.lineTo(x, y);
       });
       priceCtx.stroke();
@@ -410,10 +443,26 @@
       const x = xFor(i);
       const up = d.c >= d.o;
       priceCtx.strokeStyle = priceCtx.fillStyle = up ? "#2ECC71" : "#FF5B5B";
-      priceCtx.beginPath(); priceCtx.moveTo(x, yFor(d.h)); priceCtx.lineTo(x, yFor(d.l)); priceCtx.stroke();
-      const bodyTop = yFor(Math.max(d.o, d.c));
-      const bodyBottom = yFor(Math.min(d.o, d.c));
+      priceCtx.beginPath(); priceCtx.moveTo(x, yForClamped(d.h)); priceCtx.lineTo(x, yForClamped(d.l)); priceCtx.stroke();
+      const bodyTop = yForClamped(Math.max(d.o, d.c));
+      const bodyBottom = yForClamped(Math.min(d.o, d.c));
       priceCtx.fillRect(x - candleW / 2, bodyTop, candleW, Math.max(1, bodyBottom - bodyTop));
+
+      // If this candle's true high/low falls outside the visible axis,
+      // mark it with a small arrow instead of silently clipping it —
+      // hovering still shows the real O/H/L/C values.
+      priceCtx.fillStyle = "#9AA1B4";
+      if (d.h > maxP) {
+        priceCtx.beginPath();
+        priceCtx.moveTo(x, padding.top); priceCtx.lineTo(x - 4, padding.top + 6); priceCtx.lineTo(x + 4, padding.top + 6);
+        priceCtx.closePath(); priceCtx.fill();
+      }
+      if (d.l < minP) {
+        const yy = padding.top + plotH;
+        priceCtx.beginPath();
+        priceCtx.moveTo(x, yy); priceCtx.lineTo(x - 4, yy - 6); priceCtx.lineTo(x + 4, yy - 6);
+        priceCtx.closePath(); priceCtx.fill();
+      }
     });
 
     // Moving average (teal/green line, drawn over candles like MT4)
@@ -421,7 +470,7 @@
     priceCtx.lineWidth = 1.5;
     priceCtx.beginPath();
     sma.forEach((v, i) => {
-      const x = xFor(i), y = yFor(v);
+      const x = xFor(i), y = yForClamped(v);
       if (i === 0) priceCtx.moveTo(x, y); else priceCtx.lineTo(x, y);
     });
     priceCtx.stroke();
@@ -436,7 +485,7 @@
       for (let i = 0; i < projectedCount; i++) {
         const idx = series.length - 1 + i;
         const x = xFor(idx);
-        const y = yFor(trend.intercept + trend.slope * idx);
+        const y = yForClamped(trend.intercept + trend.slope * idx);
         if (i === 0) priceCtx.moveTo(x, y); else priceCtx.lineTo(x, y);
       }
       priceCtx.stroke();
