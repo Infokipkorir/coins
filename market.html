@@ -80,6 +80,31 @@
   td.num { font-family: 'JetBrains Mono', monospace; text-align: right; }
   .ref-tag { font-size: 10px; color: var(--text-muted); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
   .gate-msg { text-align: center; padding: 80px 20px; color: var(--text-muted); }
+
+  /* Trading-terminal styled chart card (MT4-style dark chart) */
+  .chart-card {
+    background: #0B0E14; border: 1px solid #1B2230; color: #C7CCDA;
+  }
+  .chart-card h2 { color: #6B7280; }
+  .chart-card .price-value { color: #E8ECF4; }
+  .chart-card .change.up { color: #2ECC71; background: rgba(46,204,113,0.12); }
+  .chart-card .change.down { color: #FF5B5B; background: rgba(255,91,91,0.12); }
+  .chart-card .mini-stats { color: #5C6478; }
+  .chart-card .mini-stats b { color: #E8ECF4; }
+  .chart-card .ohlc-line { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; margin: -6px 0 12px; }
+  .chart-card .ohlc-line span { color: #9AA1B4; }
+  .chart-card .timeframes { background: #131826; border: 1px solid #232A3B; }
+  .chart-card .timeframes button { color: #6B7280; }
+  .chart-card .timeframes button.active { background: #D4A93B; color: #0B0E14; }
+  .chart-card .predict-toggle { color: #6B7280; }
+  .chart-card .predict-toggle input { accent-color: #D4A93B; }
+  .chart-card .predict-note { color: #5C6478; }
+  .chart-card .predict-note b { color: #D4A93B; }
+  .chart-card .tooltip { background: #131826; border: 1px solid #232A3B; color: #E8ECF4; }
+  .chart-card .tooltip .t-label { color: #6B7280; }
+  .chart-card .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: #6B7280; margin-top: 8px; }
+  .chart-card .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .chart-card .legend i { width: 10px; height: 2px; display: inline-block; }
 </style>
 </head>
 <body>
@@ -95,7 +120,7 @@
 </header>
 
 <main>
-  <div class="card full-width">
+  <div class="card full-width chart-card">
     <div class="stats-row">
       <div>
         <div class="price-value mono" id="currentPrice"><span class="live-dot"></span>KES 0.00</div>
@@ -107,6 +132,7 @@
         <div>24h Volume<b id="statVolume">—</b></div>
       </div>
     </div>
+    <div class="ohlc-line" id="ohlcLine">Last: — &nbsp; O=— &nbsp; H=— &nbsp; L=— &nbsp; C=—</div>
 
     <div class="chart-controls">
       <div class="timeframes" id="timeframes">
@@ -125,6 +151,13 @@
     </div>
     <canvas id="volumeCanvas"></canvas>
     <div class="predict-note" id="predictNote"></div>
+    <div class="legend">
+      <span><i style="background:#2ECC71"></i> Bullish candle</span>
+      <span><i style="background:#FF5B5B"></i> Bearish candle</span>
+      <span><i style="background:#3FB8AF"></i> Moving average</span>
+      <span><i style="background:#5B7FD4"></i> Bollinger bands</span>
+      <span><i style="background:#D4A93B"></i> Current price</span>
+    </div>
   </div>
 
   <div class="card">
@@ -216,6 +249,31 @@
     return { slope, intercept };
   }
 
+  // Rolling simple moving average over candle closes (MT4-style green line).
+  function computeSMA(candles, period) {
+    return candles.map((_, i) => {
+      const start = Math.max(0, i - period + 1);
+      const slice = candles.slice(start, i + 1);
+      return slice.reduce((a, c) => a + c.c, 0) / slice.length;
+    });
+  }
+
+  // Bollinger bands: SMA ± (multiplier * rolling standard deviation).
+  function computeBollinger(candles, period, mult) {
+    const sma = computeSMA(candles, period);
+    const upper = [], lower = [];
+    candles.forEach((_, i) => {
+      const start = Math.max(0, i - period + 1);
+      const slice = candles.slice(start, i + 1);
+      const mean = sma[i];
+      const variance = slice.reduce((a, c) => a + (c.c - mean) ** 2, 0) / slice.length;
+      const sd = Math.sqrt(variance);
+      upper.push(mean + mult * sd);
+      lower.push(mean - mult * sd);
+    });
+    return { upper, lower };
+  }
+
   function refreshSeries() {
     const cfg = TIMEFRAMES[currentTF];
     const windowStart = cfg.ms === Infinity ? 0 : Date.now() - cfg.ms;
@@ -275,8 +333,13 @@
   function drawChart() {
     const { w, h } = resizeCanvas(priceCanvas);
     priceCtx.clearRect(0, 0, w, h);
+
+    // Dark terminal background
+    priceCtx.fillStyle = "#0B0E14";
+    priceCtx.fillRect(0, 0, w, h);
+
     if (!series.length) {
-      priceCtx.fillStyle = "#6B7280";
+      priceCtx.fillStyle = "#5C6478";
       priceCtx.font = "13px 'Inter', sans-serif";
       priceCtx.textAlign = "center";
       priceCtx.fillText("No price data yet — check console for details", w / 2, h / 2);
@@ -284,7 +347,7 @@
       return;
     }
 
-    const padding = { top: 14, right: 56, bottom: 8 };
+    const padding = { top: 14, right: 58, bottom: 8 };
     const plotW = w - padding.right;
     const plotH = h - padding.top - padding.bottom;
 
@@ -292,10 +355,14 @@
     const projectedCount = Math.max(3, Math.round(series.length * 0.2));
     const totalSlots = series.length + (trend ? projectedCount : 0);
 
+    const smaPeriod = Math.max(2, Math.min(10, Math.floor(series.length / 3) || 2));
+    const sma = computeSMA(series, smaPeriod);
+    const boll = computeBollinger(series, smaPeriod, 2);
+
     const highs = series.map(d => d.h);
     const lows = series.map(d => d.l);
-    let maxP = Math.max(...highs);
-    let minP = Math.min(...lows);
+    let maxP = Math.max(...highs, ...boll.upper);
+    let minP = Math.min(...lows, ...boll.lower);
     if (trend) {
       for (let i = 0; i < projectedCount; i++) {
         const proj = trend.intercept + trend.slope * (series.length - 1 + i);
@@ -309,38 +376,66 @@
 
     const candleSlot = plotW / totalSlots;
     const candleW = Math.max(2, candleSlot * 0.6);
+    const xFor = (i) => i * candleSlot + candleSlot / 2;
     const yFor = (price) => padding.top + (1 - (price - minP) / (maxP - minP)) * plotH;
 
-    priceCtx.strokeStyle = "#EEF0F4";
+    // Dotted grid + price axis labels
+    priceCtx.strokeStyle = "#1B2230";
     priceCtx.lineWidth = 1;
+    priceCtx.setLineDash([2, 3]);
     priceCtx.font = "11px 'JetBrains Mono', monospace";
-    priceCtx.fillStyle = "#6B7280";
+    priceCtx.fillStyle = "#5C6478";
     for (let i = 0; i <= 5; i++) {
       const price = minP + ((maxP - minP) * i) / 5;
       const y = yFor(price);
       priceCtx.beginPath(); priceCtx.moveTo(0, y); priceCtx.lineTo(w - padding.right, y); priceCtx.stroke();
       priceCtx.fillText(fmtFiat(price), w - padding.right + 6, y + 3);
     }
+    priceCtx.setLineDash([]);
 
+    // Bollinger bands (light blue)
+    priceCtx.strokeStyle = "rgba(91,127,212,0.55)";
+    priceCtx.lineWidth = 1;
+    [boll.upper, boll.lower].forEach(bandArr => {
+      priceCtx.beginPath();
+      bandArr.forEach((v, i) => {
+        const x = xFor(i), y = yFor(v);
+        if (i === 0) priceCtx.moveTo(x, y); else priceCtx.lineTo(x, y);
+      });
+      priceCtx.stroke();
+    });
+
+    // Candles
     series.forEach((d, i) => {
-      const x = i * candleSlot + candleSlot / 2;
+      const x = xFor(i);
       const up = d.c >= d.o;
-      priceCtx.strokeStyle = priceCtx.fillStyle = up ? "#16A34A" : "#DC2626";
+      priceCtx.strokeStyle = priceCtx.fillStyle = up ? "#2ECC71" : "#FF5B5B";
       priceCtx.beginPath(); priceCtx.moveTo(x, yFor(d.h)); priceCtx.lineTo(x, yFor(d.l)); priceCtx.stroke();
       const bodyTop = yFor(Math.max(d.o, d.c));
       const bodyBottom = yFor(Math.min(d.o, d.c));
       priceCtx.fillRect(x - candleW / 2, bodyTop, candleW, Math.max(1, bodyBottom - bodyTop));
     });
 
+    // Moving average (teal/green line, drawn over candles like MT4)
+    priceCtx.strokeStyle = "#3FB8AF";
+    priceCtx.lineWidth = 1.5;
+    priceCtx.beginPath();
+    sma.forEach((v, i) => {
+      const x = xFor(i), y = yFor(v);
+      if (i === 0) priceCtx.moveTo(x, y); else priceCtx.lineTo(x, y);
+    });
+    priceCtx.stroke();
+
+    // Trend projection (dashed gold)
     if (trend) {
       priceCtx.save();
-      priceCtx.strokeStyle = "#B45309";
+      priceCtx.strokeStyle = "#D4A93B";
       priceCtx.lineWidth = 1.5;
       priceCtx.setLineDash([5, 4]);
       priceCtx.beginPath();
       for (let i = 0; i < projectedCount; i++) {
         const idx = series.length - 1 + i;
-        const x = idx * candleSlot + candleSlot / 2;
+        const x = xFor(idx);
         const y = yFor(trend.intercept + trend.slope * idx);
         if (i === 0) priceCtx.moveTo(x, y); else priceCtx.lineTo(x, y);
       }
@@ -353,14 +448,35 @@
       el("predictNote").textContent = "";
     }
 
+    // Current-price highlighted band + price tag, sourced directly from the database price
+    const lastClose = series[series.length - 1].c;
+    const priceY = yFor(lastClose);
+    priceCtx.fillStyle = "rgba(212,169,59,0.10)";
+    priceCtx.fillRect(0, priceY - 7, w - padding.right, 14);
+    priceCtx.strokeStyle = "#D4A93B";
+    priceCtx.lineWidth = 1;
+    priceCtx.setLineDash([4, 3]);
+    priceCtx.beginPath(); priceCtx.moveTo(0, priceY); priceCtx.lineTo(w - padding.right, priceY); priceCtx.stroke();
+    priceCtx.setLineDash([]);
+
+    const tagText = fmtFiat(lastClose);
+    priceCtx.font = "bold 11px 'JetBrains Mono', monospace";
+    const tagW = priceCtx.measureText(tagText).width + 12;
+    priceCtx.fillStyle = "#D4A93B";
+    priceCtx.fillRect(w - padding.right, priceY - 9, tagW > (padding.right - 2) ? padding.right - 2 : tagW, 18);
+    priceCtx.fillStyle = "#0B0E14";
+    priceCtx.fillText(tagText, w - padding.right + 4, priceY + 4);
+
     priceCanvas._meta = { candleSlot };
   }
 
   function drawVolume() {
     const { w, h } = resizeCanvas(volumeCanvas);
     volumeCtx.clearRect(0, 0, w, h);
+    volumeCtx.fillStyle = "#0B0E14";
+    volumeCtx.fillRect(0, 0, w, h);
     if (!series.length) return;
-    const padding = { right: 56 };
+    const padding = { right: 58 };
     const plotW = w - padding.right;
     const candleSlot = plotW / series.length;
     const candleW = Math.max(2, candleSlot * 0.6);
@@ -368,7 +484,7 @@
     series.forEach((d, i) => {
       const x = i * candleSlot + candleSlot / 2;
       const up = d.c >= d.o;
-      volumeCtx.fillStyle = up ? "rgba(22,163,74,0.35)" : "rgba(220,38,38,0.35)";
+      volumeCtx.fillStyle = up ? "rgba(46,204,113,0.45)" : "rgba(255,91,91,0.45)";
       const barH = (d.v / maxV) * (h - 4);
       volumeCtx.fillRect(x - candleW / 2, h - barH, candleW, barH);
     });
@@ -390,6 +506,10 @@
     el("statHigh").textContent = fmtFiat(high);
     el("statLow").textContent = fmtFiat(low);
     el("statVolume").textContent = fmtVol(volume) + " coins";
+
+    el("ohlcLine").innerHTML =
+      `Last: <span>${fmtTime(last.t)}</span> &nbsp; O=<span>${fmtFiat(last.o)}</span> &nbsp; ` +
+      `H=<span>${fmtFiat(last.h)}</span> &nbsp; L=<span>${fmtFiat(last.l)}</span> &nbsp; C=<span>${fmtFiat(last.c)}</span>`;
   }
 
   function render() {
