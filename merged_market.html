@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Market — Unified Trading Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.2/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root {
+    --bg: #F5F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #F0F2F5;
+    --border: #E2E5EA;
+    --text: #1A1F29;
+    --text-muted: #6B7280;
+    --gold: #C9911E;
+    --gold-soft: #FFF6E5;
+    --buy: #0FA968;
+    --buy-soft: #E3F7EE;
+    --sell: #E5484D;
+    --sell-soft: #FDEAEA;
+    --up: #14B8A6;
+    --down: #E5484D;
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+  }
+  h1, h2, .display { font-family: 'Sora', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* ===== MAIN LAYOUT ===== */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100%;
+  }
+
+  /* ===== TOP BAR ===== */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 100;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 17px;
+  }
+
+  .coin-mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #FFD666, var(--gold) 60%, #A5720F 100%);
+    flex-shrink: 0;
+  }
+
+  nav {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  nav a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  nav a:hover { color: var(--text); }
+  nav a.active { color: #000; background: var(--gold); }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .icon-btn {
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    transition: background .15s ease;
+  }
+
+  .icon-btn:hover { background: var(--surface-2); }
+
+  /* ===== MAIN CONTENT ===== */
+  main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    gap: 0;
+  }
+
+  /* ===== CHART AREA ===== */
+  .chart-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .chart-header {
+    padding: 16px 20px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .stats-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 20px 30px;
+    margin-bottom: 14px;
+  }
+
+  .price-block {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .price-value {
+    font-size: 32px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: #1A1F29;
+  }
+
+  .change {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+  }
+
+  .change.up { color: var(--up); background: rgba(20, 184, 166, 0.12); }
+  .change.down { color: var(--down); background: rgba(229, 72, 77, 0.12); }
+
+  .mini-stats {
+    display: flex;
+    gap: 24px;
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+
+  .mini-stats div { display: flex; flex-direction: column; gap: 3px; }
+  .mini-stats b {
+    color: #1A1F29;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .chart-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .timeframes {
+    display: flex;
+    gap: 3px;
+    background: var(--surface-2);
+    border-radius: 8px;
+    padding: 3px;
+  }
+
+  .timeframes button {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 6px 11px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .timeframes button:hover { color: var(--text); }
+  .timeframes button.active { background: var(--gold); color: #1A1305; font-weight: 700; }
+
+  .chart-body {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  #tradingViewChart { width: 100%; height: 100%; }
+
+  /* ===== SIDE PANEL ===== */
+  .side-panel {
+    width: 320px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    transition: transform 0.3s ease;
+  }
+
+  .side-panel.hidden { transform: translateX(100%); }
+
+  .panel-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .panel-title {
+    font-weight: 700;
+    font-size: 15px;
+  }
+
+  .close-panel-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 18px;
+  }
+
+  .panel-tabs {
+    display: flex;
+    gap: 0;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--surface-2);
+  }
+
+  .panel-tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .panel-tab.active {
+    background: var(--surface);
+    color: var(--gold);
+  }
+
+  .panel-content {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .section { display: none; padding: 16px; }
+  .section.active { display: block; }
+
+  /* ===== PREDICTION PANEL ===== */
+  .prediction-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .expiry-info {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 8px;
+    background: var(--surface-2);
+    border-radius: 8px;
+    text-align: center;
+  }
+
+  .expiry-info b { color: var(--text); font-weight: 700; }
+
+  .countdown {
+    font-size: 28px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    text-align: center;
+    color: var(--sell);
+    padding: 12px;
+    background: var(--sell-soft);
+    border-radius: 8px;
+  }
+
+  .countdown.calm { color: var(--text); }
+
+  .side-buttons {
+    display: flex;
+    gap: 8px;
+  }
+
+  .side-btn {
+    flex: 1;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: center;
+  }
+
+  .side-btn .lbl { font-size: 15px; font-weight: 700; }
+  .side-btn .pct { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+
+  .side-btn.selected.up { border-color: var(--buy); background: var(--buy-soft); color: var(--buy); }
+  .side-btn.selected.down { border-color: var(--sell); background: var(--sell-soft); color: var(--sell); }
+
+  .amount-card {
+    background: var(--surface-2);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .amount-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .amount-value {
+    font-size: 20px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 10px;
+  }
+
+  .amount-buttons {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  .amount-buttons button {
+    padding: 8px 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .amount-buttons button:hover { border-color: var(--gold); }
+  .amount-buttons button.active { border-color: var(--gold); background: var(--gold-soft); color: var(--gold); }
+
+  .place-bet-btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 14px;
+    color: #fff;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+
+  .place-bet-btn.up { background: var(--buy); }
+  .place-bet-btn.down { background: var(--sell); }
+  .place-bet-btn:hover { filter: brightness(1.05); }
+  .place-bet-btn:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
+
+  /* ===== MARKETS SECTION ===== */
+  .markets-list {
+    font-size: 12px;
+  }
+
+  .market-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .market-row:last-child { border-bottom: none; }
+
+  .market-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+  }
+
+  .market-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .market-name { font-weight: 600; }
+  .market-symbol { color: var(--text-muted); font-size: 11px; }
+
+  .market-price { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+  .market-change { font-family: 'JetBrains Mono', monospace; font-weight: 600; text-align: right; min-width: 50px; }
+  .market-change.up { color: var(--buy); }
+  .market-change.down { color: var(--sell); }
+
+  /* ===== INVESTMENT SECTION ===== */
+  .investment-info {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .info-block {
+    background: var(--surface-2);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .info-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .info-value { font-size: 18px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .info-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+  .invest-gain { font-weight: 700; }
+  .invest-gain.up { color: var(--buy); }
+  .invest-gain.down { color: var(--sell); }
+
+  /* ===== MODAL ===== */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-overlay.show { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 400px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+
+  .modal-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  .modal-row:last-child { border-bottom: none; }
+
+  .modal-label { color: var(--text-muted); }
+  .modal-value { font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+  /* ===== RESPONSIVE ===== */
+  @media (max-width: 768px) {
+    .side-panel { width: 100%; }
+    .mini-stats { font-size: 10px; }
+    .price-value { font-size: 24px; }
+    .chart-controls { flex-direction: column; align-items: stretch; }
+    .timeframes { width: 100%; justify-content: center; }
+  }
+
+  @media (max-width: 600px) {
+    main { flex-direction: column; }
+    .chart-container { height: 50%; }
+    .side-panel { width: 100%; height: 50%; border-left: none; border-top: 1px solid var(--border); }
+    .topbar { padding: 10px 14px; }
+    .brand { font-size: 15px; }
+    nav { gap: 4px; }
+    nav a { padding: 6px 10px; font-size: 12px; }
+  }
+
+  #gate { display: flex; align-items: center; justify-content: center; height: 100vh; font-size: 16px; }
+</style>
+</head>
+<body>
+
+<div id="gate" style="display: flex;"><p>Loading...</p></div>
+
+<div id="app" style="display: none;">
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="coin-mark"></div>
+      <span>Market</span>
+    </div>
+    <nav>
+      <a class="active">Markets</a>
+      <a>Predictions</a>
+    </nav>
+    <div class="topbar-right">
+      <button class="icon-btn" id="accountBtn">👤</button>
+      <button class="icon-btn" id="signOutBtn">↪</button>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT -->
+  <main>
+    <!-- CHART AREA -->
+    <div class="chart-container">
+      <div class="chart-header">
+        <div class="stats-row">
+          <div class="price-block">
+            <div class="price-value mono" id="currentPrice">0.00</div>
+            <div class="change" id="priceChange">—</div>
+          </div>
+          <div class="mini-stats">
+            <div><span>High</span><b id="statHigh">0.00</b></div>
+            <div><span>Low</span><b id="statLow">0.00</b></div>
+            <div><span>Volume</span><b id="statVolume">0.00</b></div>
+            <div><span id="lastUpdated">Last: —</span></div>
+          </div>
+        </div>
+        <div class="chart-controls">
+          <div class="timeframes" id="timeframes">
+            <button data-tf="1m" class="active">1M</button>
+            <button data-tf="5m">5M</button>
+            <button data-tf="15m">15M</button>
+            <button data-tf="1h">1H</button>
+            <button data-tf="4h">4H</button>
+            <button data-tf="1d">1D</button>
+          </div>
+        </div>
+      </div>
+      <div class="chart-body">
+        <div id="tradingViewChart" style="width: 100%; height: 100%;"></div>
+      </div>
+    </div>
+
+    <!-- SIDE PANEL -->
+    <div class="side-panel" id="sidePanel">
+      <div class="panel-header">
+        <div class="panel-title" id="panelTitle">Predict</div>
+        <button class="close-panel-btn" id="closePanelBtn">✕</button>
+      </div>
+
+      <div class="panel-tabs">
+        <button class="panel-tab active" data-tab="prediction">Predict</button>
+        <button class="panel-tab" data-tab="markets">Markets</button>
+        <button class="panel-tab" data-tab="investment">Wallet</button>
+      </div>
+
+      <div class="panel-content">
+        <!-- PREDICTION SECTION -->
+        <div class="section active prediction-section" id="predictionTab">
+          <div class="expiry-info">
+            Next round closes in <b id="countdownVal">5m 0s</b>
+          </div>
+
+          <div class="countdown" id="countdownDisplay">5m 0s</div>
+
+          <div class="side-buttons">
+            <button class="side-btn up selected" id="sideBtnUp">
+              <div class="lbl">▲ UP</div>
+              <div class="pct" id="upOdds">55%</div>
+            </button>
+            <button class="side-btn down" id="sideBtnDown">
+              <div class="lbl">▼ DOWN</div>
+              <div class="pct" id="downOdds">45%</div>
+            </button>
+          </div>
+
+          <div class="amount-card">
+            <div class="amount-label">Bet Amount (KES)</div>
+            <div class="amount-value mono" id="amountValue">0</div>
+            <div class="amount-buttons" id="quickAmounts">
+              <button data-amt="100">100</button>
+              <button data-amt="500">500</button>
+              <button data-amt="1000">1K</button>
+              <button data-amt="5000">5K</button>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span>Available: <b id="avblVal" class="mono" style="color: var(--text);">0</b></span>
+              <span class="max-btn" id="maxBtn" style="cursor: pointer; color: var(--gold); font-weight: 700;">MAX</span>
+            </div>
+            <button class="place-bet-btn up" id="placeBetBtn">Place Bet</button>
+          </div>
+        </div>
+
+        <!-- MARKETS SECTION -->
+        <div class="section markets-list" id="marketsTab">
+          <div style="font-size: 12px; font-weight: 600; padding-bottom: 8px; color: var(--text-muted);">Top Markets</div>
+          <div id="marketsList"></div>
+        </div>
+
+        <!-- INVESTMENT SECTION -->
+        <div class="section investment-info" id="investmentTab">
+          <div class="info-block">
+            <div class="info-label">Portfolio Value</div>
+            <div class="info-value" id="investValue">0 KES</div>
+            <div class="invest-gain" id="investGain">No trades yet</div>
+          </div>
+          <div class="info-block">
+            <div class="info-label">Your Holdings</div>
+            <div class="info-value" id="investCoins">0.00000000</div>
+            <div class="info-sub">Coins</div>
+          </div>
+          <div class="info-block">
+            <div class="info-label">Avg Buy Price</div>
+            <div class="info-value" id="investAvg">—</div>
+            <div class="info-sub" id="investInvestedLabel">Net Invested: <b id="investInvested" class="mono">0 KES</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ACCOUNT MODAL -->
+<div class="modal-overlay" id="accountModalOverlay">
+  <div class="modal">
+    <div class="modal-header">Account Info</div>
+    <div class="modal-row">
+      <span class="modal-label">Email</span>
+      <span class="modal-value" id="acctEmail">—</span>
+    </div>
+    <div class="modal-row">
+      <span class="modal-label">Joined</span>
+      <span class="modal-value" id="acctJoined">—</span>
+    </div>
+    <div class="modal-row">
+      <span class="modal-label">Fiat Balance</span>
+      <span class="modal-value" id="acctFiat">—</span>
+    </div>
+    <div class="modal-row">
+      <span class="modal-label">Coin Balance</span>
+      <span class="modal-value" id="acctCoins">—</span>
+    </div>
+    <button style="width: 100%; margin-top: 16px; padding: 10px; background: var(--sell); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 700;" id="acctSignOutBtn">Sign Out</button>
+    <button style="width: 100%; margin-top: 8px; padding: 10px; background: var(--surface-2); color: var(--text); border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="document.getElementById('accountModalOverlay').style.display='none';">Close</button>
+  </div>
+</div>
+
+<script>
+  const el = (id) => document.getElementById(id);
+  const client = window.supabase.createClient('https://YOUR_SUPABASE_URL', 'YOUR_ANON_KEY');
+
+  let session = null;
+  let currentPrice = 0;
+  let walletBalance = 0;
+  let selectedSide = "up";
+  let selectedAmount = 0;
+  let currentRound = null;
+  let countdownTimer = null;
+  let chart = null;
+  let priceSeries = null;
+
+  // ===== FORMATTING =====
+  const fmtKES = (n) => "KES " + Number(n).toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const fmtFiat = (n) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtTime = (t) => new Date(t).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  // ===== CHART SETUP (Lightweight Charts) =====
+  function initChart() {
+    const chartElement = el("tradingViewChart");
+    chart = LightweightCharts.createChart(chartElement, {
+      layout: { background: { color: '#FFFFFF' }, textColor: '#6B7280' },
+      timeScale: { timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: '#E2E5EA' },
+      grid: { hlines: { color: '#F0F2F5' }, vlines: { color: '#F0F2F5' } },
+    });
+
+    priceSeries = chart.addCandlestickSeries({
+      upColor: '#14B8A6', downColor: '#E5484D',
+      borderVisible: false, wickUpColor: '#14B8A6', wickDownColor: '#E5484D',
+    });
+
+    chart.timeScale().fitContent();
+  }
+
+  // ===== PREDICTION SIDE BUTTONS =====
+  el("sideBtnUp").addEventListener("click", () => {
+    el("sideBtnUp").classList.add("selected");
+    el("sideBtnDown").classList.remove("selected");
+    selectedSide = "up";
+    el("placeBetBtn").className = "place-bet-btn up";
+    el("placeBetBtn").textContent = "Place UP Bet";
+  });
+
+  el("sideBtnDown").addEventListener("click", () => {
+    el("sideBtnDown").classList.add("selected");
+    el("sideBtnUp").classList.remove("selected");
+    selectedSide = "down";
+    el("placeBetBtn").className = "place-bet-btn down";
+    el("placeBetBtn").textContent = "Place DOWN Bet";
+  });
+
+  // ===== AMOUNT SELECTION =====
+  function setAmount(amt) {
+    selectedAmount = amt;
+    el("amountValue").textContent = amt > 0 ? fmtKES(amt) : "0";
+    document.querySelectorAll("#quickAmounts button").forEach(b => {
+      b.classList.toggle("active", Number(b.dataset.amt) === amt);
+    });
+    el("placeBetBtn").disabled = amt === 0 || amt > walletBalance;
+  }
+
+  el("quickAmounts").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-amt]");
+    if (btn) setAmount(Number(btn.dataset.amt));
+  });
+
+  el("maxBtn").addEventListener("click", () => setAmount(Math.floor(walletBalance)));
+
+  // ===== COUNTDOWN TIMER =====
+  function tickCountdown() {
+    if (!currentRound) return;
+    const now = Date.now();
+    const endTime = new Date(currentRound.round_end).getTime();
+    const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
+    const mins = Math.floor(remaining / 60);
+    const secs = remaining % 60;
+    const display = `${mins}m ${secs}s`;
+    el("countdownVal").textContent = display;
+    el("countdownDisplay").textContent = display;
+    el("countdownVal").classList.toggle("calm", remaining > 30);
+  }
+
+  // ===== PLACE BET =====
+  el("placeBetBtn").addEventListener("click", async () => {
+    if (selectedAmount <= 0) { alert("Choose an amount first."); return; }
+    if (selectedAmount > walletBalance) { alert("Amount exceeds your available balance."); return; }
+    const btn = el("placeBetBtn");
+    btn.disabled = true;
+    const prevText = btn.textContent;
+    btn.textContent = "Placing…";
+    const { error } = await client.rpc("place_prediction_bet", { p_side: selectedSide, p_amount: selectedAmount });
+    btn.textContent = prevText;
+    if (error) { alert("Error: " + error.message); btn.disabled = false; return; }
+    await loadWallet();
+    setAmount(0);
+  });
+
+  // ===== LOAD WALLET =====
+  async function loadWallet() {
+    const { data } = await client.from("wallets").select("fiat_balance").eq("user_id", session.user.id).maybeSingle();
+    walletBalance = data ? Number(data.fiat_balance) : 0;
+    el("avblVal").textContent = fmtKES(walletBalance);
+  }
+
+  // ===== LOAD CURRENT ROUND =====
+  async function loadCurrentRound() {
+    const { data: round } = await client.rpc("ensure_open_round");
+    const r = Array.isArray(round) ? round[0] : round;
+    if (r) currentRound = r;
+  }
+
+  // ===== LOAD MARKET DATA =====
+  async function loadMarketData() {
+    const [priceRes, historyRes] = await Promise.all([
+      client.from("coin_price").select("price").eq("id", 1).maybeSingle(),
+      client.from("coin_price_history").select("price, created_at").order("created_at", { ascending: true }).limit(1000),
+    ]);
+
+    currentPrice = priceRes.data ? Number(priceRes.data.price) : 0;
+    el("currentPrice").textContent = fmtFiat(currentPrice);
+
+    if (historyRes.data && historyRes.data.length) {
+      const candleData = historyRes.data.map((h, i) => ({
+        time: new Date(h.created_at).getTime() / 1000,
+        open: Number(h.price),
+        high: Number(h.price),
+        low: Number(h.price),
+        close: Number(h.price),
+      }));
+      priceSeries.setData(candleData);
+      chart.timeScale().fitContent();
+    }
+  }
+
+  // ===== LOAD INVESTMENT =====
+  async function loadInvestment(userId) {
+    const [{ data: wallet }, { data: txns }] = await Promise.all([
+      client.from("wallets").select("coin_balance").eq("user_id", userId).maybeSingle(),
+      client.from("transactions").select("type, coin_amount, fiat_amount").eq("user_id", userId),
+    ]);
+
+    const coinBalance = wallet ? Number(wallet.coin_balance) : 0;
+    let buyFiat = 0, buyCoins = 0, sellFiat = 0;
+    (txns || []).forEach(t => {
+      if (t.type === "buy") { buyFiat += Number(t.fiat_amount); buyCoins += Number(t.coin_amount); }
+      else { sellFiat += Number(t.fiat_amount); }
+    });
+
+    const netInvested = buyFiat - sellFiat;
+    const currentValue = coinBalance * currentPrice;
+    const gain = currentValue - netInvested;
+    const gainPct = netInvested > 0 ? (gain / netInvested) * 100 : 0;
+
+    el("investValue").textContent = fmtKES(currentValue);
+    el("investCoins").textContent = coinBalance.toFixed(8);
+    el("investInvested").textContent = fmtKES(netInvested);
+    el("investAvg").textContent = buyCoins > 0 ? fmtFiat(buyFiat / buyCoins) : "—";
+
+    const gainEl = el("investGain");
+    if (netInvested > 0) {
+      gainEl.textContent = (gain >= 0 ? "▲ " : "▼ ") + fmtKES(Math.abs(gain)) + " (" + Math.abs(gainPct).toFixed(2) + "%)";
+      gainEl.className = "invest-gain " + (gain >= 0 ? "up" : "down");
+    } else {
+      gainEl.textContent = "No trades yet";
+      gainEl.className = "invest-gain";
+    }
+  }
+
+  // ===== PANEL TAB SWITCHING =====
+  document.querySelectorAll(".panel-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      const tabName = tab.dataset.tab;
+      document.querySelectorAll(".panel-tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+      tab.classList.add("active");
+
+      if (tabName === "prediction") {
+        el("predictionTab").classList.add("active");
+        el("panelTitle").textContent = "Predict";
+      } else if (tabName === "markets") {
+        el("marketsTab").classList.add("active");
+        el("panelTitle").textContent = "Markets";
+      } else if (tabName === "investment") {
+        el("investmentTab").classList.add("active");
+        el("panelTitle").textContent = "Wallet";
+      }
+    });
+  });
+
+  // ===== ACCOUNT MODAL =====
+  el("accountBtn").addEventListener("click", async () => {
+    if (!session) return;
+    el("acctEmail").textContent = session.user.email || "—";
+    el("acctJoined").textContent = session.user.created_at
+      ? new Date(session.user.created_at).toLocaleDateString()
+      : "—";
+
+    const { data: wallet } = await client.from("wallets").select("fiat_balance, coin_balance").eq("user_id", session.user.id).maybeSingle();
+    el("acctFiat").textContent = wallet ? fmtKES(Number(wallet.fiat_balance)) : fmtKES(0);
+    el("acctCoins").textContent = wallet ? Number(wallet.coin_balance).toFixed(8) : "0.00000000";
+
+    el("accountModalOverlay").style.display = "flex";
+  });
+
+  el("acctSignOutBtn").addEventListener("click", async () => {
+    await client.auth.signOut();
+    window.location.href = "index.html";
+  });
+
+  el("closePanelBtn").addEventListener("click", () => {
+    el("sidePanel").classList.add("hidden");
+  });
+
+  el("signOutBtn").addEventListener("click", async () => {
+    await client.auth.signOut();
+    window.location.href = "index.html";
+  });
+
+  // ===== INIT =====
+  (async function init() {
+    const { data: { session: s } } = await client.auth.getSession();
+    if (!s) { window.location.href = "index.html?redirect=merged_market.html"; return; }
+    session = s;
+
+    el("gate").style.display = "none";
+    el("app").style.display = "flex";
+
+    initChart();
+    await loadWallet();
+    await loadCurrentRound();
+    await loadMarketData();
+    await loadInvestment(session.user.id);
+
+    setAmount(0);
+    tickCountdown();
+    countdownTimer = setInterval(tickCountdown, 1000);
+    setInterval(loadCurrentRound, 15000);
+
+    // Realtime updates
+    client.channel("merged-price-updates")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "coin_price" }, async () => {
+        await loadMarketData();
+        await loadInvestment(session.user.id);
+      })
+      .subscribe();
+
+    client.channel("merged-rounds")
+      .on("postgres_changes", { event: "*", schema: "public", table: "prediction_rounds" }, () => {
+        loadCurrentRound();
+      })
+      .subscribe();
+  })();
+</script>
+
+</body>
+</html>
