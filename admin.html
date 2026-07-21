@@ -129,6 +129,36 @@
     </div>
 
     <div class="card">
+      <div class="chart-head">
+        <h2 style="margin:0;">Staking APR (disclosed rate)</h2>
+      </div>
+      <div class="price-row">
+        <span class="current mono" id="currentStakingRate">0.00% APR</span>
+        <input type="number" id="newStakingRate" step="0.01" min="0" max="1000" placeholder="New APR %" />
+        <button class="btn" id="setStakingRateBtn">Update rate</button>
+      </div>
+      <div class="status" id="stakingRateStatus"></div>
+      <p style="font-size:12px;color:var(--text-muted);margin:12px 0 0;line-height:1.5;">
+        This is the disclosed annual rate paid to users who lock coins into a stake.
+        Interest accrues continuously from each stake's start time and is only ever paid out
+        when a user claims a stake after its term ends — nothing is auto-credited or auto-deducted.
+        Rate changes apply immediately to all active stakes going forward; interest already
+        accrued at the previous rate is preserved.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Active &amp; recent stakes</h2>
+      <table>
+        <thead>
+          <tr><th>Email</th><th>Staked</th><th>Term</th><th>Matures</th><th>Status</th><th>Accrued</th></tr>
+        </thead>
+        <tbody id="stakesBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+      <div class="status" id="stakesStatus"></div>
+    </div>
+
+    <div class="card">
       <h2>Users &amp; wallets</h2>
       <table>
         <thead>
@@ -260,6 +290,51 @@
     if (!btn) return;
     loadPriceHistory(btn.dataset.range);
   });
+
+  let stakesRefreshTimer = null;
+
+  async function loadStakingRate() {
+    const { data, error } = await client.rpc("get_current_staking_rate");
+    if (!error && data !== null) {
+      el("currentStakingRate").textContent = Number(data).toFixed(2) + "% APR";
+    }
+  }
+
+  el("setStakingRateBtn").addEventListener("click", async () => {
+    const rate = parseFloat(el("newStakingRate").value);
+    if (rate === "" || isNaN(rate) || rate < 0) { setStatus("stakingRateStatus", "Enter a non-negative APR", "error"); return; }
+    el("setStakingRateBtn").disabled = true;
+    const { error } = await client.rpc("admin_set_staking_rate", { p_rate_annual_percent: rate });
+    el("setStakingRateBtn").disabled = false;
+    if (error) { setStatus("stakingRateStatus", error.message, "error"); return; }
+    setStatus("stakingRateStatus", "Staking rate updated — applies to all active stakes immediately", "success");
+    el("newStakingRate").value = "";
+    loadStakingRate();
+    loadStakes();
+    loadAudit();
+  });
+
+  async function loadStakes() {
+    const { data, error } = await client.rpc("admin_list_stakes");
+    const body = el("stakesBody");
+    if (error) { body.innerHTML = `<tr><td colspan="6" class="empty">${error.message}</td></tr>`; return; }
+    if (!data || !data.length) { body.innerHTML = `<tr><td colspan="6" class="empty">No stakes yet</td></tr>`; return; }
+    body.innerHTML = data.map(s => `
+      <tr>
+        <td>${s.email || "—"}</td>
+        <td class="num">${fmtCoin(s.coin_amount)}</td>
+        <td>${s.term_days}d</td>
+        <td>${fmtDate(s.end_at)}</td>
+        <td><span class="tag ${s.status === 'active' ? 'buy' : 'sell'}" style="text-transform:capitalize;">${s.status}</span></td>
+        <td class="num">${fmtCoin(s.accrued_coins)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function startStakesAutoRefresh() {
+    if (stakesRefreshTimer) clearInterval(stakesRefreshTimer);
+    stakesRefreshTimer = setInterval(loadStakes, 5000);
+  }
 
   async function loadUsers() {
     const { data, error } = await client.rpc("admin_list_users");
@@ -414,6 +489,9 @@
     });
     loadPrice();
     loadPriceHistory(currentRange);
+    loadStakingRate();
+    loadStakes();
+    startStakesAutoRefresh();
     loadUsers();
     loadTxns();
     loadAudit();
