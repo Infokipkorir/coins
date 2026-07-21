@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Predict — Up or Down 5m</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #F5F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #F0F2F5;
+    --border: #E2E5EA;
+    --text: #1A1F29;
+    --text-muted: #6B7280;
+    --gold: #C9911E;
+    --gold-soft: #FFF6E5;
+    --buy: #0FA968;
+    --buy-soft: #E3F7EE;
+    --sell: #E5484D;
+    --sell-soft: #FDEAEA;
+    --up: #14B8A6;
+    --down: #E5484D;
+    --amber: #C9911E;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; width: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+  h1, h2, .display { font-family: 'Sora', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  button { font-family: inherit; }
+
+  #page { max-width: 480px; margin: 0 auto; background: var(--surface); min-height: 100vh; display: flex; flex-direction: column; }
+
+  /* ===== TOP BAR ===== */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .topbar .left, .topbar .right { display: flex; align-items: center; gap: 14px; }
+  .icon-btn {
+    background: none; border: none; color: var(--text); cursor: pointer;
+    width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+    padding: 0; border-radius: 8px; transition: background .15s ease;
+  }
+  .icon-btn:hover { background: var(--surface-2); }
+  .pair-title { display: flex; align-items: center; gap: 10px; }
+  .pair-icon {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    background: radial-gradient(circle at 35% 30%, #FFD666, var(--gold) 60%, #A5720F 100%);
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff;
+  }
+  .pair-title h1 { margin: 0; font-size: 16px; font-weight: 700; }
+
+  /* ===== EXPIRY ROW ===== */
+  .expiry-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; font-size: 12px; color: var(--text-muted); flex-shrink: 0;
+  }
+  .expiry-row b { color: var(--text); font-weight: 600; margin-left: 4px; }
+  .rules-btn {
+    background: var(--surface-2); border: none; color: var(--text); font-size: 12px; font-weight: 600;
+    padding: 6px 10px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px;
+  }
+
+  /* ===== STATS ROW ===== */
+  .stats-row {
+    display: flex; padding: 4px 16px 14px; gap: 8px; flex-shrink: 0;
+  }
+  .stat-block { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .stat-block + .stat-block { border-left: 1px solid var(--border); padding-left: 14px; }
+  .stat-label { font-size: 11px; color: var(--text-muted); }
+  .stat-value { font-size: 19px; font-weight: 700; }
+  .stat-value.mono { font-family: 'JetBrains Mono', monospace; }
+  .stat-sub { font-size: 12px; font-weight: 700; }
+  .stat-sub.up { color: var(--up); }
+  .stat-sub.down { color: var(--down); }
+  #countdownVal { color: var(--sell); font-size: 19px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  #countdownVal.calm { color: var(--text); }
+
+  /* ===== CHART ===== */
+  .chart-area { position: relative; padding: 0 0 6px; flex-shrink: 0; }
+  #miniChart { width: 100%; height: 220px; display: block; }
+  .target-tag {
+    position: absolute; right: 0; font-size: 10px; font-weight: 700; color: #fff;
+    background: #333A46; padding: 2px 7px 2px 9px; border-radius: 3px 0 0 3px;
+    display: flex; align-items: center; gap: 3px;
+  }
+  .chart-times {
+    display: flex; justify-content: space-between; padding: 0 16px; font-size: 10px; color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ===== ROUND STRIP ===== */
+  .round-strip {
+    display: flex; align-items: center; gap: 8px; padding: 12px 16px; overflow-x: auto;
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .round-strip::-webkit-scrollbar { display: none; }
+  .round-chip {
+    display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-muted);
+    background: var(--surface-2); padding: 8px 12px; border-radius: 8px; white-space: nowrap; flex-shrink: 0;
+  }
+  .round-chip.active { background: var(--gold-soft); color: var(--gold); }
+  .round-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: #22C55E; }
+  .round-more { margin-left: auto; font-size: 12px; color: var(--text-muted); font-weight: 600; white-space: nowrap; display: flex; align-items: center; gap: 2px; }
+
+  /* ===== TRADE CARD ===== */
+  .trade-card { padding: 16px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+
+  .buysell-row { display: flex; align-items: center; justify-content: space-between; }
+  .buysell-tabs { display: flex; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 10px; }
+  .buysell-tabs button {
+    border: none; background: transparent; padding: 8px 18px; border-radius: 7px; font-size: 14px; font-weight: 700;
+    color: var(--text-muted); cursor: pointer; transition: all .15s ease;
+  }
+  .buysell-tabs button.active.buy { background: #fff; color: var(--buy); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .buysell-tabs button.active.sell { background: #fff; color: var(--sell); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .market-tag { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
+  .market-tag .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); }
+
+  .side-row { display: flex; gap: 10px; }
+  .side-btn {
+    flex: 1; text-align: left; padding: 14px 16px; border-radius: 10px; cursor: pointer;
+    border: 1.5px solid var(--border); background: var(--surface); transition: all .15s ease;
+  }
+  .side-btn .lbl { font-size: 17px; font-weight: 700; margin-bottom: 2px; }
+  .side-btn .pct { font-size: 13px; color: var(--text-muted); font-weight: 600; }
+  .side-btn.up.selected { border-color: var(--buy); background: var(--buy-soft); }
+  .side-btn.up.selected .lbl, .side-btn.up.selected .pct { color: var(--buy); }
+  .side-btn.down.selected { border-color: var(--sell); background: var(--sell-soft); }
+  .side-btn.down.selected .lbl, .side-btn.down.selected .pct { color: var(--sell); }
+
+  .orderbook-toggle {
+    display: flex; align-items: center; justify-content: space-between; padding: 12px 14px;
+    background: var(--surface-2); border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 700;
+  }
+  .orderbook-toggle .chev { transition: transform .2s ease; color: var(--text-muted); }
+  .orderbook-toggle.open .chev { transform: rotate(180deg); }
+  #orderBookPanel { display: none; border: 1px solid var(--border); border-radius: 10px; padding: 4px 12px; margin-top: -6px; max-height: 160px; overflow-y: auto; }
+  #orderBookPanel.open { display: block; }
+  .ob-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 12px; border-bottom: 1px solid var(--border); }
+  .ob-row:last-child { border-bottom: none; }
+  .ob-side { font-weight: 700; }
+  .ob-side.up { color: var(--buy); } .ob-side.down { color: var(--sell); }
+  .ob-empty { text-align: center; color: var(--text-muted); font-size: 12px; padding: 16px 0; }
+
+  .amount-card { background: var(--surface-2); border-radius: 10px; padding: 14px; }
+  .amount-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+  .amount-value { font-size: 26px; font-weight: 700; font-family: 'JetBrains Mono', monospace; margin-bottom: 12px; }
+  .amount-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .amount-quick button {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 10px 4px;
+    font-weight: 700; font-size: 13px; cursor: pointer; transition: all .15s ease;
+  }
+  .amount-quick button:hover { border-color: var(--gold); }
+  .amount-quick button.active { border-color: var(--gold); background: var(--gold-soft); color: var(--gold); }
+
+  .avbl-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-muted); }
+  .avbl-row b { color: var(--text); font-family: 'JetBrains Mono', monospace; }
+  .avbl-row .max-btn { color: var(--gold); font-weight: 700; cursor: pointer; }
+
+  .buy-btn {
+    width: 100%; border: none; border-radius: 10px; padding: 15px; font-size: 15px; font-weight: 700;
+    color: #fff; cursor: pointer; transition: filter .15s ease;
+  }
+  .buy-btn.up { background: var(--buy); }
+  .buy-btn.down { background: var(--sell); }
+  .buy-btn:hover { filter: brightness(1.05); }
+  .buy-btn:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; filter: none; }
+
+  .footnote { text-align: center; font-size: 11px; color: var(--text-muted); padding-top: 2px; }
+
+  /* ===== RESULT TOAST ===== */
+  #resultToast {
+    position: fixed; left: 50%; top: 16px; transform: translateX(-50%) translateY(-140%);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 20px; box-shadow: 0 12px 32px rgba(0,0,0,.15); z-index: 300; text-align: center;
+    transition: transform .3s ease; max-width: 90vw;
+  }
+  #resultToast.show { transform: translateX(-50%) translateY(0); }
+  #resultToast .rt-title { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+  #resultToast.won .rt-title { color: var(--buy); }
+  #resultToast.lost .rt-title { color: var(--sell); }
+  #resultToast .rt-sub { font-size: 12px; color: var(--text-muted); }
+
+  /* ===== RULES MODAL ===== */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(26,31,41,0.45); z-index: 400;
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal-box { background: var(--surface); border-radius: var(--radius); width: 100%; max-width: 380px; padding: 22px; }
+  .modal-box h3 { margin: 0 0 14px; font-size: 16px; }
+  .modal-box ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text-muted); line-height: 1.8; }
+  .modal-close {
+    margin-top: 16px; width: 100%; background: var(--surface-2); border: none; border-radius: 8px;
+    padding: 10px; font-weight: 700; cursor: pointer;
+  }
+
+  .gate-msg { display: flex; align-items: center; justify-content: center; height: 100vh; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div id="gate" class="gate-msg"><p>Loading…</p></div>
+
+<div id="page" style="display:none;">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="left">
+      <button class="icon-btn" onclick="window.location.href='market.html'" title="Back">←</button>
+      <div class="pair-title">
+        <span class="pair-icon">₿</span>
+        <h1>Coin Up or Down 5m</h1>
+      </div>
+    </div>
+    <div class="right">
+      <button class="icon-btn" title="Share">⤴</button>
+      <button class="icon-btn" title="Favorite">☆</button>
+    </div>
+  </div>
+
+  <!-- EXPIRY -->
+  <div class="expiry-row">
+    <div>Expiration Date: <b id="expiryLabel">—</b></div>
+    <button class="rules-btn" id="rulesBtn">Rules ›</button>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat-block">
+      <div class="stat-label">Price to Beat</div>
+      <div class="stat-value mono" id="priceToBeat">—</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-label">Current Price <span id="currentChange" class="stat-sub">—</span></div>
+      <div class="stat-value mono" id="currentPriceVal" style="color:var(--amber);">—</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-label">Countdown</div>
+      <div id="countdownVal">00:00</div>
+    </div>
+  </div>
+
+  <!-- CHART -->
+  <div class="chart-area">
+    <svg id="miniChart" viewBox="0 0 700 220" preserveAspectRatio="none"></svg>
+    <div class="target-tag" id="targetTag" style="top: 0;">Target ↓</div>
+  </div>
+  <div class="chart-times">
+    <span id="tLeft">—</span><span id="tMid">—</span><span id="tRight">—</span>
+  </div>
+
+  <!-- ROUND STRIP -->
+  <div class="round-strip" id="roundStrip"></div>
+
+  <!-- TRADE CARD -->
+  <div class="trade-card">
+
+    <div class="buysell-row">
+      <div class="buysell-tabs">
+        <button class="active buy" id="tabBuy">Buy</button>
+        <button class="sell" id="tabSell">Sell</button>
+      </div>
+      <div class="market-tag"><span class="dot"></span>Market</div>
+    </div>
+
+    <div class="side-row">
+      <div class="side-btn up selected" id="sideUp">
+        <div class="lbl">Up</div>
+        <div class="pct" id="upPct">+90%</div>
+      </div>
+      <div class="side-btn down" id="sideDown">
+        <div class="lbl">Down</div>
+        <div class="pct" id="downPct">+90%</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="orderbook-toggle" id="obToggle">
+        <span>Order Book</span>
+        <span class="chev">⌄</span>
+      </div>
+      <div id="orderBookPanel"></div>
+    </div>
+
+    <div class="amount-card">
+      <div class="amount-head"><span>Amount (KES)</span><span>To Win: <b id="toWin" class="mono">0.00</b></span></div>
+      <div class="amount-value mono" id="amountDisplay">0</div>
+      <div class="amount-quick" id="quickAmounts">
+        <button data-amt="50">KSh 50</button>
+        <button data-amt="100">KSh 100</button>
+        <button data-amt="250">KSh 250</button>
+        <button data-amt="500">KSh 500</button>
+      </div>
+    </div>
+
+    <div class="avbl-row">
+      <span>Avbl <b id="avblVal">KSh 0.00</b></span>
+      <span class="max-btn" id="maxBtn">MAX</span>
+    </div>
+
+    <button class="buy-btn up" id="placeBetBtn">Buy Up</button>
+
+    <div class="footnote">Fixed payout ×1.9 (+90%) · Settles automatically when the round closes</div>
+
+  </div>
+
+</div>
+
+<!-- RESULT TOAST -->
+<div id="resultToast"><div class="rt-title" id="rtTitle"></div><div class="rt-sub" id="rtSub"></div></div>
+
+<!-- RULES MODAL -->
+<div class="modal-overlay" id="rulesModal">
+  <div class="modal-box">
+    <h3>How this round works</h3>
+    <ul>
+      <li>Every round locks in the current price as the <b>Price to Beat</b> and runs for 5 minutes.</li>
+      <li>Predict whether the price will be <b>Up</b> or <b>Down</b> versus that price when the round ends.</li>
+      <li>Correct predictions pay a fixed <b>1.9× return (+90% profit)</b> on your stake.</li>
+      <li>If the closing price exactly matches the price to beat, all stakes for that round are refunded.</li>
+      <li>A new round starts automatically the instant the previous one settles.</li>
+    </ul>
+    <button class="modal-close" id="closeRulesModal">Got it</button>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = "https://nfrrcvqlbeqtivgpjkwf.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_LmGTKVphP1BnXrv1MVgYig_QImgQ_Rd";
+  const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const el = id => document.getElementById(id);
+
+  // ===== STATE =====
+  let session = null;
+  let currentRound = null;      // active row from prediction_rounds
+  let currentPrice = 0;
+  let walletBalance = 0;
+  let selectedSide = 'up';
+  let selectedAmount = 0;
+  let chartPoints = [];         // [{t, price}] since round_start
+  let obOpen = false;
+  let countdownTimer = null;
+  let lastSeenSettledRoundId = null;
+
+  function fmtKES(n) {
+    return "KSh " + (typeof n === "number" && !isNaN(n) ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00");
+  }
+  function fmtTime(d) {
+    const h = String(d.getHours()).padStart(2, "0");
+    const m = String(d.getMinutes()).padStart(2, "0");
+    const s = String(d.getSeconds()).padStart(2, "0");
+    return `${h}:${m}:${s}`;
+  }
+  function fmtHM(d) {
+    const h = String(d.getHours()).padStart(2, "0");
+    const m = String(d.getMinutes()).padStart(2, "0");
+    return `${h}:${m}`;
+  }
+
+  // ===== MINI CHART (hand-drawn SVG, matches the step-line look) =====
+  function drawChart() {
+    const svg = el("miniChart");
+    if (!currentRound) { svg.innerHTML = ""; return; }
+
+    const W = 700, H = 220, PAD = 10;
+    const start = new Date(currentRound.round_start).getTime();
+    const end = new Date(currentRound.round_end).getTime();
+    const target = Number(currentRound.price_to_beat);
+
+    const pts = chartPoints.filter(p => p.t >= start);
+    if (pts.length < 2) { svg.innerHTML = ""; return; }
+
+    const prices = pts.map(p => p.price).concat([target]);
+    let lo = Math.min(...prices), hi = Math.max(...prices);
+    if (hi === lo) { hi += 1; lo -= 1; }
+    const span = hi - lo;
+    lo -= span * 0.15; hi += span * 0.15;
+
+    const x = t => PAD + ((t - start) / Math.max(1, (Math.min(Date.now(), end) - start))) * (W - PAD * 2);
+    const y = p => H - PAD - ((p - lo) / (hi - lo)) * (H - PAD * 2);
+
+    const targetY = y(target);
+    const lastPt = pts[pts.length - 1];
+    const lineColor = lastPt.price >= target ? "#14B8A6" : "#E5484D";
+
+    let path = "M " + pts.map(p => `${x(p.t).toFixed(1)},${y(p.price).toFixed(1)}`).join(" L ");
+
+    svg.innerHTML = `
+      <line x1="0" y1="${targetY.toFixed(1)}" x2="${W}" y2="${targetY.toFixed(1)}" stroke="#C9CDD6" stroke-width="1" stroke-dasharray="4 4" />
+      <path d="${path}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+      <circle cx="${x(lastPt.t).toFixed(1)}" cy="${y(lastPt.price).toFixed(1)}" r="4" fill="${lineColor}" />
+    `;
+
+    const tag = el("targetTag");
+    tag.style.top = Math.max(0, Math.min(H - 18, targetY - 8)) + "px";
+
+    el("tLeft").textContent = fmtHM(new Date(pts[0].t));
+    el("tMid").textContent = fmtHM(new Date(pts[Math.floor(pts.length / 2)].t));
+    el("tRight").textContent = fmtHM(new Date(lastPt.t));
+  }
+
+  // ===== ROUND STRIP (visual list of 5-min slots; only the live one is active) =====
+  function renderRoundStrip() {
+    if (!currentRound) return;
+    const end = new Date(currentRound.round_end);
+    const strip = el("roundStrip");
+    let html = "";
+    for (let i = 0; i < 4; i++) {
+      const t = new Date(end.getTime() + i * 5 * 60000);
+      const active = i === 0;
+      html += `<div class="round-chip ${active ? "active" : ""}">${active ? '<span class="dot"></span>' : ""}${fmtHM(t)}</div>`;
+    }
+    html += `<div class="round-more">More ⌄</div>`;
+    strip.innerHTML = html;
+  }
+
+  // ===== COUNTDOWN =====
+  function tickCountdown() {
+    if (!currentRound) return;
+    const end = new Date(currentRound.round_end).getTime();
+    const remain = Math.max(0, Math.floor((end - Date.now()) / 1000));
+    const m = String(Math.floor(remain / 60)).padStart(2, "0");
+    const s = String(remain % 60).padStart(2, "0");
+    const cd = el("countdownVal");
+    cd.textContent = `${m}:${s}`;
+    cd.classList.toggle("calm", remain > 10);
+    el("placeBetBtn").disabled = remain <= 3 || selectedAmount <= 0 || selectedAmount > walletBalance;
+  }
+
+  // ===== STATS =====
+  function updateStats() {
+    if (!currentRound) return;
+    el("priceToBeat").textContent = fmtKES(Number(currentRound.price_to_beat)).replace("KSh ", "");
+    el("currentPriceVal").textContent = fmtKES(currentPrice).replace("KSh ", "");
+    const diff = currentPrice - Number(currentRound.price_to_beat);
+    const pct = Number(currentRound.price_to_beat) > 0 ? (diff / Number(currentRound.price_to_beat)) * 100 : 0;
+    const chEl = el("currentChange");
+    chEl.textContent = (diff >= 0 ? "+" : "") + diff.toFixed(2) + " (" + pct.toFixed(2) + "%)";
+    chEl.className = "stat-sub " + (diff >= 0 ? "up" : "down");
+    el("expiryLabel").textContent = new Date(currentRound.round_end).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) + " " + fmtTime(new Date(currentRound.round_end));
+  }
+
+  // ===== AMOUNT / SIDE SELECTION =====
+  function selectSide(side) {
+    selectedSide = side;
+    el("sideUp").classList.toggle("selected", side === "up");
+    el("sideDown").classList.toggle("selected", side === "down");
+    const btn = el("placeBetBtn");
+    btn.className = "buy-btn " + side;
+    btn.textContent = "Buy " + (side === "up" ? "Up" : "Down");
+  }
+  function setAmount(v) {
+    selectedAmount = v;
+    el("amountDisplay").textContent = v.toLocaleString();
+    el("toWin").textContent = (v * 1.9).toFixed(2);
+    document.querySelectorAll("#quickAmounts button").forEach(b => b.classList.toggle("active", Number(b.dataset.amt) === v));
+    tickCountdown();
+  }
+
+  el("sideUp").addEventListener("click", () => selectSide("up"));
+  el("sideDown").addEventListener("click", () => selectSide("down"));
+  el("quickAmounts").addEventListener("click", e => {
+    const btn = e.target.closest("button[data-amt]");
+    if (!btn) return;
+    setAmount(Number(btn.dataset.amt));
+  });
+  el("maxBtn").addEventListener("click", () => setAmount(Math.floor(walletBalance)));
+
+  el("obToggle").addEventListener("click", () => {
+    obOpen = !obOpen;
+    el("obToggle").classList.toggle("open", obOpen);
+    el("orderBookPanel").classList.toggle("open", obOpen);
+    if (obOpen) loadOrderBook();
+  });
+
+  el("tabSell").addEventListener("click", () => {
+    alert("Sell isn't available for prediction rounds — outcomes settle automatically at round close.");
+  });
+
+  el("rulesBtn").addEventListener("click", () => el("rulesModal").classList.add("show"));
+  el("closeRulesModal").addEventListener("click", () => el("rulesModal").classList.remove("show"));
+  el("rulesModal").addEventListener("click", e => { if (e.target.id === "rulesModal") el("rulesModal").classList.remove("show"); });
+
+  // ===== ORDER BOOK =====
+  async function loadOrderBook() {
+    if (!currentRound) return;
+    const { data, error } = await client.rpc("get_prediction_order_book", { p_round_id: currentRound.id, p_limit: 30 });
+    const panel = el("orderBookPanel");
+    if (error || !data || !data.length) {
+      panel.innerHTML = `<div class="ob-empty">No bets placed on this round yet</div>`;
+      return;
+    }
+    panel.innerHTML = data.map(r => `
+      <div class="ob-row">
+        <span class="ob-side ${r.side}">${r.side === "up" ? "▲ Up" : "▼ Down"}</span>
+        <span class="mono">${r.short_id}…</span>
+        <span class="mono">${fmtKES(Number(r.amount))}</span>
+      </div>
+    `).join("");
+  }
+
+  // ===== RESULT TOAST =====
+  function showResultToast(status, side, amount, payout) {
+    const toast = el("resultToast");
+    toast.className = status === "won" ? "won" : status === "lost" ? "lost" : "";
+    el("rtTitle").textContent = status === "won" ? `You won ${fmtKES(payout)}` : status === "lost" ? "Round lost" : "Round tied — refunded";
+    el("rtSub").textContent = `Your ${side === "up" ? "Up" : "Down"} bet of ${fmtKES(amount)} on the last round`;
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 4500);
+  }
+
+  async function checkForSettledBet(previousRoundId) {
+    if (!previousRoundId || !session) return;
+    const { data } = await client.from("prediction_bets")
+      .select("side, amount, status, payout_amount")
+      .eq("round_id", previousRoundId)
+      .eq("user_id", session.user.id)
+      .neq("status", "pending")
+      .limit(1);
+    if (data && data.length) {
+      const b = data[0];
+      showResultToast(b.status, b.side, Number(b.amount), Number(b.payout_amount || 0));
+    }
+  }
+
+  // ===== WALLET =====
+  async function loadWallet() {
+    const { data } = await client.from("wallets").select("fiat_balance").eq("user_id", session.user.id).maybeSingle();
+    walletBalance = data ? Number(data.fiat_balance) : 0;
+    el("avblVal").textContent = fmtKES(walletBalance);
+    tickCountdown();
+  }
+
+  // ===== PLACE BET =====
+  el("placeBetBtn").addEventListener("click", async () => {
+    if (selectedAmount <= 0) { alert("Choose an amount first."); return; }
+    if (selectedAmount > walletBalance) { alert("Amount exceeds your available balance."); return; }
+    const btn = el("placeBetBtn");
+    btn.disabled = true;
+    const prevText = btn.textContent;
+    btn.textContent = "Placing…";
+    const { error } = await client.rpc("place_prediction_bet", { p_side: selectedSide, p_amount: selectedAmount });
+    btn.textContent = prevText;
+    if (error) {
+      alert("Couldn't place that bet: " + error.message);
+      tickCountdown();
+      return;
+    }
+    await loadWallet();
+    setAmount(0);
+    if (obOpen) loadOrderBook();
+  });
+
+  // ===== ROUND / PRICE LOADING =====
+  async function loadCurrentRound() {
+    const { data: round } = await client.rpc("ensure_open_round");
+    // rpc returning a single row comes back as an object OR array depending on function shape;
+    // ensure_open_round() returns a single row (not set-returning) so it's an object.
+    const r = Array.isArray(round) ? round[0] : round;
+    if (!r) return;
+
+    const isNewRound = !currentRound || currentRound.id !== r.id;
+    const prevId = currentRound ? currentRound.id : null;
+    currentRound = r;
+
+    if (isNewRound) {
+      chartPoints = [];
+      const { data: hist } = await client.from("coin_price_history")
+        .select("price, created_at")
+        .gte("created_at", r.round_start)
+        .order("created_at", { ascending: true })
+        .limit(500);
+      chartPoints = (hist || []).map(h => ({ t: new Date(h.created_at).getTime(), price: Number(h.price) }));
+      renderRoundStrip();
+      updateStats();
+      if (prevId) checkForSettledBet(prevId);
+    }
+  }
+
+  async function loadCurrentPrice() {
+    const { data } = await client.from("coin_price").select("price").eq("id", 1).maybeSingle();
+    currentPrice = data ? Number(data.price) : 0;
+    if (currentPrice) chartPoints.push({ t: Date.now(), price: currentPrice });
+    updateStats();
+    drawChart();
+  }
+
+  // ===== REALTIME =====
+  function subscribeRealtime() {
+    client.channel("predict-price")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "coin_price" }, payload => {
+        currentPrice = Number(payload.new.price);
+        chartPoints.push({ t: Date.now(), price: currentPrice });
+        updateStats();
+        drawChart();
+      })
+      .subscribe();
+
+    client.channel("predict-rounds")
+      .on("postgres_changes", { event: "*", schema: "public", table: "prediction_rounds" }, () => {
+        loadCurrentRound();
+      })
+      .subscribe();
+
+    client.channel("predict-wallet")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wallets", filter: `user_id=eq.${session.user.id}` }, () => {
+        loadWallet();
+      })
+      .subscribe();
+  }
+
+  // ===== INIT =====
+  (async function init() {
+    const { data: { session: s } } = await client.auth.getSession();
+    if (!s) { window.location.href = "index.html?redirect=predict.html"; return; }
+    session = s;
+
+    el("gate").style.display = "none";
+    el("page").style.display = "flex";
+
+    selectSide("up");
+    setAmount(0);
+
+    await loadWallet();
+    await loadCurrentRound();
+    await loadCurrentPrice();
+    renderRoundStrip();
+    updateStats();
+    drawChart();
+
+    countdownTimer = setInterval(tickCountdown, 1000);
+    setInterval(loadCurrentRound, 15000); // safety poll in case realtime misses an update
+    subscribeRealtime();
+  })();
+</script>
+
+</body>
+</html>
