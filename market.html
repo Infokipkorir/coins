@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/lightweight-charts@5.0.2/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root {
     --bg: #F5F6F8;
@@ -269,20 +270,15 @@
     flex-direction: column;
   }
 
-  #priceCanvas {
-    display: block;
+  #priceChart {
+    flex: 1;
     width: 100%;
-    height: 100%;
-    touch-action: pan-y;
-    cursor: crosshair;
+    min-height: 0;
   }
 
-  #volumeCanvas {
-    display: block;
-    width: 100%;
-    height: 80px;
-    margin-top: 8px;
-    touch-action: pan-y;
+  /* Lightweight Charts renders its own canvas inside #priceChart */
+  #priceChart > div {
+    border-radius: 0;
   }
 
   .tooltip {
@@ -696,10 +692,9 @@
       <!-- CHART BODY -->
       <div class="chart-body">
         <div class="chart-wrap">
-          <canvas id="priceCanvas"></canvas>
+          <div id="priceChart"></div>
           <div class="tooltip" id="tooltip"></div>
         </div>
-        <canvas id="volumeCanvas"></canvas>
         <div class="last-updated" id="lastUpdated">Waiting for price data…</div>
       </div>
 
@@ -838,148 +833,95 @@
     return `${mo}/${dy} ${h}:${m}`;
   }
 
-  // ========== CHART RENDERING ==========
-  const priceCanvas = el("priceCanvas");
-  const volumeCanvas = el("volumeCanvas");
-  const pCtx = priceCanvas.getContext("2d");
-  const vCtx = volumeCanvas.getContext("2d");
+  // ========== CHART RENDERING (TradingView Lightweight Charts) ==========
+  const priceChartEl = el("priceChart");
   const tooltip = el("tooltip");
 
-  function resizeCanvas() {
-    const dpr = window.devicePixelRatio || 1;
-    const priceRect = priceCanvas.parentElement.getBoundingClientRect();
-    const newPW = Math.round(priceRect.width * dpr);
-    const newPH = Math.round(priceRect.height * dpr);
-    if (priceCanvas.width !== newPW || priceCanvas.height !== newPH) {
-      priceCanvas.width = newPW;
-      priceCanvas.height = newPH;
-      pCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
+  const UP_COLOR = "#14B8A6";
+  const DOWN_COLOR = "#E5484D";
 
-    const volumeRect = volumeCanvas.getBoundingClientRect();
-    const newVW = Math.round(volumeRect.width * dpr);
-    const newVH = Math.round(volumeRect.height * dpr);
-    if (volumeCanvas.width !== newVW || volumeCanvas.height !== newVH) {
-      volumeCanvas.width = newVW;
-      volumeCanvas.height = newVH;
-      vCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
+  const chart = LightweightCharts.createChart(priceChartEl, {
+    layout: {
+      background: { type: LightweightCharts.ColorType.Solid, color: "#FFFFFF" },
+      textColor: "#3A4150",
+      fontFamily: "'JetBrains Mono', monospace",
+      attributionLogo: false,
+    },
+    grid: {
+      vertLines: { color: "#EDEFF3" },
+      horzLines: { color: "#EDEFF3" },
+    },
+    rightPriceScale: {
+      borderColor: "#E2E5EA",
+      scaleMargins: { top: 0.08, bottom: 0.24 },
+    },
+    timeScale: {
+      borderColor: "#E2E5EA",
+      timeVisible: true,
+      secondsVisible: false,
+    },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    autoSize: true,
+  });
+
+  const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+    upColor: UP_COLOR,
+    downColor: DOWN_COLOR,
+    borderUpColor: UP_COLOR,
+    borderDownColor: DOWN_COLOR,
+    wickUpColor: UP_COLOR,
+    wickDownColor: DOWN_COLOR,
+    priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+  });
+
+  // Volume rendered as an overlay pane pinned to the bottom of the same chart
+  const volumeSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
+    priceFormat: { type: "volume" },
+    priceScaleId: "vol",
+  });
+  volumeSeries.priceScale().applyOptions({
+    scaleMargins: { top: 0.82, bottom: 0 },
+  });
+
+  // Time value for a given series/vol point, matching the LW Charts time format
+  // ("ALL" uses business-day date strings; other timeframes use UTC seconds)
+  function seriesTime(point) {
+    return currentTF === "ALL" ? point.key : Math.floor(point.t / 1000);
   }
 
-  function drawChart() {
-    // Resize only if needed — resizing clears the canvas and causes blink
-    resizeCanvas();
-    if (!series.length) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const w = priceCanvas.width / dpr;
-    const h = priceCanvas.height / dpr;
-    const pad = 50;
-    const bottomPad = 20;
-    const chartW = w - pad * 2;
-    const chartH = h - pad - bottomPad;
-
-    pCtx.fillStyle = "#FFFFFF";
-    pCtx.fillRect(0, 0, w, h);
-
-    const prices = series.flatMap(c => [c.o, c.h, c.l, c.c]).filter(p => p > 0);
-    const minPrice = Math.min(...prices);
-    const maxPrice = Math.max(...prices);
-    const priceRange = maxPrice - minPrice || 1;
-    const scale = chartH / priceRange;
-
-    // Grid lines
-    pCtx.strokeStyle = "#EDEFF3";
-    pCtx.lineWidth = 0.5;
-    for (let i = 0; i <= 5; i++) {
-      const y = pad + (chartH / 5) * i;
-      pCtx.beginPath();
-      pCtx.moveTo(pad, y);
-      pCtx.lineTo(pad + chartW, y);
-      pCtx.stroke();
+  function fmtCrosshairTime(t) {
+    if (typeof t === "number") return fmtTime(t * 1000);
+    if (t && typeof t === "object") {
+      return new Date(Date.UTC(t.year, t.month - 1, t.day)).toISOString().split("T")[0];
     }
-
-    // Price labels on right (vertical axis)
-    pCtx.fillStyle = "#8A93A3";
-    pCtx.font = "10px 'JetBrains Mono'";
-    pCtx.textAlign = "left";
-    for (let i = 0; i <= 5; i++) {
-      const price = maxPrice - (priceRange / 5) * i;
-      const y = pad + (chartH / 5) * i + 3;
-      pCtx.fillText(price.toFixed(0), pad + chartW + 8, y);
-    }
-
-    // Time labels along the bottom (horizontal axis)
-    pCtx.textAlign = "center";
-    const labelCount = Math.min(6, series.length);
-    if (labelCount > 1) {
-      for (let i = 0; i < labelCount; i++) {
-        const idx = Math.round((i / (labelCount - 1)) * (series.length - 1));
-        const cx = pad + (idx + 0.5) * (chartW / series.length);
-        pCtx.fillText(fmtTime(series[idx].t), cx, pad + chartH + 14);
-      }
-    }
-
-    // Candles
-    const candleSlot = chartW / series.length;
-    const candleW = Math.max(2, candleSlot * 0.7);
-    const spacing = (candleSlot - candleW) / 2;
-
-    priceCanvas._meta = { candleSlot, pad, chartW, chartH, minPrice, scale, w, h };
-    lastMeta = priceCanvas._meta;
-
-    series.forEach((c, i) => {
-      const x = pad + spacing + i * candleSlot + candleW / 2;
-      const yO = pad + chartH - (c.o - minPrice) * scale;
-      const yH = pad + chartH - (c.h - minPrice) * scale;
-      const yL = pad + chartH - (c.l - minPrice) * scale;
-      const yC = pad + chartH - (c.c - minPrice) * scale;
-
-      const isUp = c.c >= c.o;
-      pCtx.strokeStyle = isUp ? "#14B8A6" : "#E5484D";
-      pCtx.fillStyle = isUp ? "rgba(20, 184, 166, 0.85)" : "rgba(229, 72, 77, 0.85)";
-
-      pCtx.lineWidth = 1;
-      pCtx.beginPath();
-      pCtx.moveTo(x, yH);
-      pCtx.lineTo(x, yL);
-      pCtx.stroke();
-
-      pCtx.fillRect(x - candleW / 2, Math.min(yO, yC), candleW, Math.abs(yC - yO) || 1);
-      pCtx.strokeRect(x - candleW / 2, Math.min(yO, yC), candleW, Math.abs(yC - yO) || 1);
-    });
-
-    // Draw pattern annotations on top of candles
-    drawAnnotations(lastMeta);
+    return "";
   }
 
-  function drawVolume() {
-    const w = volumeCanvas.width / (window.devicePixelRatio || 1);
-    const h = volumeCanvas.height / (window.devicePixelRatio || 1);
+  chart.subscribeCrosshairMove(param => {
+    if (!param.point || !param.time) { tooltip.style.display = "none"; return; }
+    const d = param.seriesData.get(candleSeries);
+    if (!d) { tooltip.style.display = "none"; return; }
 
-    vCtx.fillStyle = "#FFFFFF";
-    vCtx.fillRect(0, 0, w, h);
-
-    if (!rawTrades.length) return;
-
-    const volumes = rawTrades.map(t => Math.abs(t.coin_amount));
-    const maxVol = Math.max(...volumes, 1);
-    const scale = (h * 0.9) / maxVol;
-    const barW = Math.max(1, w / rawTrades.length * 0.8);
-    const spacing = w / rawTrades.length;
-
-    rawTrades.forEach((t, i) => {
-      const x = (i + 0.1) * spacing;
-      const barH = t.coin_amount * scale;
-      vCtx.fillStyle = t.type === "buy" ? "rgba(20, 184, 166, 0.45)" : "rgba(229, 72, 77, 0.45)";
-      vCtx.fillRect(x, h - barH, barW, barH);
-    });
-  }
+    tooltip.style.display = "block";
+    const containerW = priceChartEl.clientWidth;
+    const tw = 140;
+    let left = param.point.x + 10;
+    if (left + tw > containerW) left = param.point.x - tw - 10;
+    tooltip.style.left = Math.max(0, left) + "px";
+    tooltip.style.top = "8px";
+    tooltip.innerHTML = `
+      <div class="t-row"><span class="t-label">${fmtCrosshairTime(param.time)}</span></div>
+      <div class="t-row"><span class="t-label">O</span><span>${fmtFiat(d.open)}</span></div>
+      <div class="t-row"><span class="t-label">H</span><span>${fmtFiat(d.high)}</span></div>
+      <div class="t-row"><span class="t-label">L</span><span>${fmtFiat(d.low)}</span></div>
+      <div class="t-row"><span class="t-label">C</span><span>${fmtFiat(d.close)}</span></div>
+    `;
+  });
 
   // ========== ANNOTATION SYSTEM ==========
   let annotationsEnabled = true;
-  let hoveredAnnotation = null;  // { label, x, y } currently under cursor
-  let lastMeta = null;           // cached layout from most recent drawChart
+  let priceLines = [];         // active support/resistance/neckline price lines
+  let seriesMarkersApi = null; // markers primitive (Double Top, Head & Shoulders, etc.)
 
   // --- Pattern detection ---
   // Returns array of annotation objects: { type, label, x (candle index), price, lineFrom?, lineTo? }
@@ -1065,138 +1007,56 @@
     return patterns;
   }
 
-  // --- Draw a small rounded-rectangle label (TradingView style) ---
-  function drawAnnotLabel(ctx, text, x, y, color, isMobile, visible) {
-    if (!text) return { x, y, w:0, h:0 };
-    const fontSize = isMobile ? 9 : 11;
-    ctx.font = `500 ${fontSize}px 'Inter',sans-serif`;
-    const tw = ctx.measureText(text).width;
-    const pad = isMobile ? 3 : 4;
-    const w = tw + pad*2 + 2;
-    const h = fontSize + pad*2;
-    const rx = x - w/2;
-    const ry = y - h/2;
+  // --- Apply detected patterns as native chart price lines + markers ---
+  function updateAnnotations() {
+    // Clear previous price lines
+    priceLines.forEach(line => candleSeries.removePriceLine(line));
+    priceLines = [];
 
-    if (!visible) return { x:rx, y:ry, w, h };  // return bounds for collision only
+    if (!annotationsEnabled || series.length < 5) {
+      if (seriesMarkersApi) seriesMarkersApi.setMarkers([]);
+      return;
+    }
 
-    // Background pill
-    ctx.globalAlpha = 0.92;
-    ctx.fillStyle = '#1A1F29';
-    ctx.beginPath();
-    ctx.roundRect(rx, ry, w, h, 3);
-    ctx.fill();
-
-    // Colored left border accent
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = color;
-    ctx.fillRect(rx, ry+2, 2, h-4);
-
-    // Text
-    ctx.fillStyle = '#F5F6F8';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, x+1, y);
-    ctx.globalAlpha = 1;
-
-    return { x:rx, y:ry, w, h };
-  }
-
-  // --- Main overlay draw pass ---
-  function drawAnnotations(meta) {
-    if (!annotationsEnabled || !series.length || !meta) return;
-    const isMobile = window.innerWidth < 768;
     const patterns = detectPatterns(series);
-    if (!patterns.length) return;
+    const linePatterns = patterns.filter(p => p.lineFrom !== undefined);
+    const pointPatterns = patterns.filter(p => p.lineFrom === undefined && p.label);
 
-    const { pad, chartW, chartH, candleSlot, minPrice, scale, w, h } = meta;
-
-    // candleX: pixel x center of candle i
-    const cx = i => pad + (i + 0.5) * candleSlot;
-    // priceY: pixel y for a given price
-    const py = p => pad + chartH - (p - minPrice) * scale;
-
-    // Separate lines from point labels
-    const linePatterns  = patterns.filter(p => p.lineFrom !== undefined);
-    const pointPatterns = patterns.filter(p => p.lineFrom === undefined);
-
-    // 1. Draw horizontal dashed lines first (behind labels)
+    // Support / resistance / neckline → native dashed price lines with axis labels
     linePatterns.forEach(p => {
-      const y = py(p.price);
-      if (y < 0 || y > h) return;
-      pCtx.save();
-      pCtx.setLineDash([4, 4]);
-      pCtx.lineWidth = 1;
-      pCtx.strokeStyle = p.color;
-      pCtx.beginPath();
-      pCtx.moveTo(cx(p.lineFrom), y);
-      pCtx.lineTo(cx(p.lineTo), y);
-      pCtx.stroke();
-      pCtx.setLineDash([]);
-      pCtx.restore();
+      priceLines.push(candleSeries.createPriceLine({
+        price: p.price,
+        color: p.color,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: p.label,
+      }));
     });
 
-    // 2. Collect all label positions + perform collision detection
-    const placed = [];   // { x1,y1,x2,y2 } bounding boxes already placed
+    // Double Top / Head & Shoulders → markers above the relevant candles
+    const markers = pointPatterns
+      .map(p => ({
+        time: seriesTime(series[p.x]),
+        position: "aboveBar",
+        color: p.color,
+        shape: "circle",
+        text: p.label,
+      }))
+      .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
 
-    const collides = (rx, ry, rw, rh) =>
-      placed.some(b => rx < b.x2 && rx+rw > b.x1 && ry < b.y2 && ry+rh > b.y1);
-
-    // Determine which labels are hovered (within 14px of cursor)
-    const hov = hoveredAnnotation;
-
-    // Point labels (Head, Shoulder, Double Top, etc.)
-    pointPatterns.forEach(p => {
-      if (!p.label) return;
-      if (isMobile && (p.type==='resistance' || p.type==='support')) return; // hide on mobile
-
-      const x = cx(p.x);
-      const rawY = py(p.price);
-      // Place label above the candle high with small offset
-      const offset = isMobile ? 10 : 13;
-      let labelY = rawY - offset;
-      labelY = Math.max(14, Math.min(h - 14, labelY));
-
-      // On mobile, show label only on hover; on desktop always show
-      const isHovered = hov && Math.abs(hov.x - x) < 30 && Math.abs(hov.y - labelY) < 20;
-      const showLabel = !isMobile || isHovered;
-
-      // Dry-run to get bounds
-      const bounds = drawAnnotLabel(pCtx, p.label, x, labelY, p.color, isMobile, false);
-      if (bounds.w > 0 && !collides(bounds.x, bounds.y, bounds.w, bounds.h)) {
-        drawAnnotLabel(pCtx, p.label, x, labelY, p.color, isMobile, showLabel);
-        placed.push({ x1:bounds.x, y1:bounds.y, x2:bounds.x+bounds.w, y2:bounds.y+bounds.h });
-
-        // Tiny dot marker at candle tip
-        pCtx.beginPath();
-        pCtx.arc(x, rawY - 3, isMobile ? 2 : 2.5, 0, Math.PI*2);
-        pCtx.fillStyle = p.color;
-        pCtx.fill();
-      }
-    });
-
-    // Line labels (Neckline, Support, Resistance) — place at right end of line
-    linePatterns.forEach(p => {
-      if (!p.label) return;
-      if (isMobile && p.type !== 'neckline') return; // only neckline on mobile
-
-      const x = cx(p.lineTo) + (isMobile ? 4 : 6);
-      const y = py(p.price);
-      if (y < 0 || y > h) return;
-
-      const isHovered = hov && Math.abs(hov.x - x) < 36 && Math.abs(hov.y - y) < 16;
-      const showLabel = !isMobile || isHovered;
-
-      const bounds = drawAnnotLabel(pCtx, p.label, x + 20, y, p.color, isMobile, false);
-      if (bounds.w > 0 && !collides(bounds.x, bounds.y, bounds.w, bounds.h)) {
-        drawAnnotLabel(pCtx, p.label, x + 20, y, p.color, isMobile, showLabel);
-        placed.push({ x1:bounds.x, y1:bounds.y, x2:bounds.x+bounds.w, y2:bounds.y+bounds.h });
-      }
-    });
+    if (!seriesMarkersApi) {
+      seriesMarkersApi = LightweightCharts.createSeriesMarkers(candleSeries, markers);
+    } else {
+      seriesMarkersApi.setMarkers(markers);
+    }
   }
 
   // ========== CANDLE GENERATION ==========
+  let volSeries = []; // volume aligned to the same time buckets as `series`
+
   function refreshSeries() {
-    if (!rawPoints.length) { series = []; return; }
+    if (!rawPoints.length) { series = []; volSeries = []; return; }
 
     const now = Date.now();
     const tfMs = {
@@ -1209,25 +1069,30 @@
     const ms = tfMs[currentTF] || 86400000;
     const cutoff = now - ms;
     const pts = rawPoints.filter(p => p.t >= cutoff);
+    const trades = rawTrades.filter(t => t.t >= cutoff);
 
     if (currentTF === "ALL") {
       const grouped = {};
       pts.forEach(p => {
-        const d = new Date(p.t);
-        const key = d.toISOString().split("T")[0];
+        const key = new Date(p.t).toISOString().split("T")[0];
         if (!grouped[key]) grouped[key] = [];
         grouped[key].push(p.price);
       });
-      series = Object.entries(grouped).map(([k, ps]) => {
-        const sorted = ps.slice().sort((a, b) => a - b);
-        return {
-          t: new Date(k).getTime(),
-          o: ps[0],
-          h: Math.max(...ps),
-          l: Math.min(...ps),
-          c: ps[ps.length - 1]
-        };
+      series = Object.entries(grouped).map(([k, ps]) => ({
+        t: new Date(k).getTime(),
+        key: k,
+        o: ps[0],
+        h: Math.max(...ps),
+        l: Math.min(...ps),
+        c: ps[ps.length - 1]
+      })).sort((a, b) => a.t - b.t);
+
+      const volGrouped = {};
+      trades.forEach(tr => {
+        const key = new Date(tr.t).toISOString().split("T")[0];
+        volGrouped[key] = (volGrouped[key] || 0) + Math.abs(tr.coin_amount);
       });
+      volSeries = series.map(c => ({ key: c.key, t: c.t, v: volGrouped[c.key] || 0, up: c.c >= c.o }));
     } else {
       const binSize = ms / 12;
       const bins = {};
@@ -1246,6 +1111,13 @@
           c: ps[ps.length - 1]
         };
       }).sort((a, b) => a.t - b.t);
+
+      const volBins = {};
+      trades.forEach(tr => {
+        const bin = Math.floor(tr.t / binSize) * binSize;
+        volBins[bin] = (volBins[bin] || 0) + Math.abs(tr.coin_amount);
+      });
+      volSeries = series.map(c => ({ t: c.t, v: volBins[c.t] || 0, up: c.c >= c.o }));
     }
   }
 
