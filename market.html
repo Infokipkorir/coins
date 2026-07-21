@@ -1410,7 +1410,7 @@
     if (!session) { window.location.href = "index.html?redirect=market.html"; return; }
 
     el("gate").style.display = "none";
-    el("app").style.display = "block";
+    el("app").style.display = "flex";
     el("signOutBtn").addEventListener("click", async () => { await client.auth.signOut(); window.location.href = "index.html"; });
 
     await loadMarketData();
