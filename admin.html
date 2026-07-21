@@ -10,9 +10,9 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   :root {
-    --bg: #0B0E14; --surface: #141922; --surface-2: #1C2330; --border: #262E3D;
-    --text: #EDF1F7; --text-muted: #7C8798; --gold: #F0B429; --gold-dim: #7A5E1C;
-    --buy: #34D399; --sell: #FB6F6F; --radius: 14px; font-size: 16px;
+    --bg: #F5F6F8; --surface: #FFFFFF; --surface-2: #F0F2F5; --border: #E2E5EA;
+    --text: #1A1F29; --text-muted: #6B7280; --gold: #C9911E; --gold-dim: #E9C97B;
+    --buy: #0FA968; --sell: #E5484D; --radius: 14px; font-size: 16px;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -248,8 +248,8 @@
           },
         },
         scales: {
-          x: { ticks: { color: "#7C8798", maxTicksLimit: 6, font: { size: 11 } }, grid: { color: "#262E3D" } },
-          y: { ticks: { color: "#7C8798", font: { size: 11 }, callback: (v) => fmtFiat(v) }, grid: { color: "#262E3D" } },
+          x: { ticks: { color: "#6B7280", maxTicksLimit: 6, font: { size: 11 } }, grid: { color: "#E2E5EA" } },
+          y: { ticks: { color: "#6B7280", font: { size: 11 }, callback: (v) => fmtFiat(v) }, grid: { color: "#E2E5EA" } },
         },
       },
     });
