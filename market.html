@@ -9,26 +9,26 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
-    --bg: #0A0E27;
-    --surface: #1A1F3A;
-    --surface-2: #252D45;
-    --border: #323E57;
-    --text: #E2E8F0;
-    --text-muted: #8B95A8;
-    --gold: #F0B429;
-    --gold-soft: #FEF3E2;
-    --buy: #38E1C7;
-    --buy-soft: #0D3D35;
-    --sell: #FF6F91;
-    --sell-soft: #3D1520;
-    --chart-bg: #0B0E1A;
-    --chart-border: #1B2032;
-    --chart-grid: #1E2436;
-    --chart-text: #C7CCDA;
-    --chart-text-dim: #6B7280;
-    --up: #38E1C7;
-    --down: #FF6F91;
-    --amber: #F0B429;
+    --bg: #F5F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #F0F2F5;
+    --border: #E2E5EA;
+    --text: #1A1F29;
+    --text-muted: #6B7280;
+    --gold: #C9911E;
+    --gold-soft: #FFF6E5;
+    --buy: #0FA968;
+    --buy-soft: #E3F7EE;
+    --sell: #E5484D;
+    --sell-soft: #FDEAEA;
+    --chart-bg: #FFFFFF;
+    --chart-border: #E2E5EA;
+    --chart-grid: #EDEFF3;
+    --chart-text: #3A4150;
+    --chart-text-dim: #8A93A3;
+    --up: #14B8A6;
+    --down: #E5484D;
+    --amber: #C9911E;
     --radius: 12px;
   }
 
@@ -75,7 +75,7 @@
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #FFD666, var(--gold) 60%, #7A4A0C 100%);
+    background: radial-gradient(circle at 35% 30%, #FFD666, var(--gold) 60%, #A5720F 100%);
     flex-shrink: 0;
   }
 
@@ -159,7 +159,7 @@
     font-size: clamp(28px, 5vw, 40px);
     font-weight: 700;
     font-family: 'JetBrains Mono', monospace;
-    color: #EDF1F7;
+    color: #1A1F29;
     letter-spacing: -0.5px;
   }
 
@@ -185,7 +185,7 @@
 
   .mini-stats div { display: flex; flex-direction: column; gap: 3px; }
   .mini-stats b {
-    color: #EDF1F7;
+    color: #1A1F29;
     font-family: 'JetBrains Mono', monospace;
     font-size: 13px;
     font-weight: 600;
@@ -208,7 +208,7 @@
   .timeframes {
     display: flex;
     gap: 3px;
-    background: #121729;
+    background: #F0F2F5;
     border: 1px solid var(--chart-border);
     border-radius: 8px;
     padding: 3px;
@@ -288,14 +288,14 @@
   .tooltip {
     position: absolute;
     pointer-events: none;
-    background: #121729;
+    background: #F0F2F5;
     border: 1px solid var(--chart-border);
     border-radius: 8px;
     padding: 8px 12px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
     line-height: 1.6;
-    color: #EDF1F7;
+    color: #1A1F29;
     display: none;
     z-index: 20;
     white-space: nowrap;
@@ -446,7 +446,7 @@
     font-size: 20px;
     font-weight: 700;
     font-family: 'JetBrains Mono', monospace;
-    color: #EDF1F7;
+    color: #1A1F29;
     margin-bottom: 6px;
   }
 
@@ -467,7 +467,7 @@
 
   .invest-row:last-child { border-bottom: none; }
   .invest-row span:first-child { color: var(--text-muted); }
-  .invest-row b { font-family: 'JetBrains Mono', monospace; color: #EDF1F7; }
+  .invest-row b { font-family: 'JetBrains Mono', monospace; color: #1A1F29; }
 
   .invest-gain {
     font-size: 12px;
@@ -639,6 +639,10 @@
     <nav>
       <a href="market.html" class="active">Market</a>
       <a href="trade.html">Trade</a>
+      <button id="accountBtn" style="
+        background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+        font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 8px; cursor: pointer;
+        font-family: 'Inter', sans-serif;">Account</button>
       <button id="signOutBtn">Sign out</button>
     </nav>
   </header>
@@ -679,7 +683,7 @@
               <span><i style="background:var(--down)"></i>Down</span>
             </div>
             <button id="annotToggle" title="Toggle pattern annotations" style="
-              background:#121729; border:1px solid var(--chart-border); color:var(--chart-text-dim);
+              background:#F0F2F5; border:1px solid var(--chart-border); color:var(--chart-text-dim);
               font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600;
               padding:5px 9px; border-radius:6px; cursor:pointer; white-space:nowrap;
               transition:all .15s ease; display:flex; align-items:center; gap:5px;">
@@ -760,6 +764,47 @@
   <!-- TOGGLE PANEL BUTTON -->
   <button class="toggle-panel active" id="togglePanel" title="Toggle panel">☰</button>
 
+  <!-- ACCOUNT MODAL -->
+  <div id="accountModalOverlay" style="
+    display:none; position:fixed; inset:0; background:rgba(26,31,41,0.45);
+    z-index:200; align-items:center; justify-content:center; padding:20px;">
+    <div style="
+      background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+      width:100%; max-width:380px; padding:22px; box-shadow:0 20px 50px rgba(0,0,0,0.15);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+        <h3 style="margin:0; font-size:15px; font-family:'Sora',sans-serif;">Account</h3>
+        <button id="closeAccountModal" style="
+          background:none; border:none; color:var(--text-muted); font-size:18px; cursor:pointer;
+          width:28px; height:28px; display:flex; align-items:center; justify-content:center;">✕</button>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:14px;">
+        <div>
+          <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; font-weight:600;">Email</div>
+          <div id="acctEmail" style="font-size:14px; font-weight:600;">—</div>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; font-weight:600;">Member since</div>
+          <div id="acctJoined" class="mono" style="font-size:13px;">—</div>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="flex:1; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:12px;">
+            <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; font-weight:600;">Fiat balance</div>
+            <div id="acctFiat" class="mono" style="font-size:15px; font-weight:700;">—</div>
+          </div>
+          <div style="flex:1; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:12px;">
+            <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; font-weight:600;">Coin balance</div>
+            <div id="acctCoins" class="mono" style="font-size:15px; font-weight:700;">—</div>
+          </div>
+        </div>
+        <button id="acctSignOutBtn" style="
+          margin-top:6px; background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+          font-size:13px; font-weight:600; padding:10px; border-radius:8px; cursor:pointer;
+          font-family:'Sora',sans-serif;">Sign out</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -830,10 +875,11 @@
     const w = priceCanvas.width / dpr;
     const h = priceCanvas.height / dpr;
     const pad = 50;
+    const bottomPad = 20;
     const chartW = w - pad * 2;
-    const chartH = h - pad;
+    const chartH = h - pad - bottomPad;
 
-    pCtx.fillStyle = "#0B0E1A";
+    pCtx.fillStyle = "#FFFFFF";
     pCtx.fillRect(0, 0, w, h);
 
     const prices = series.flatMap(c => [c.o, c.h, c.l, c.c]).filter(p => p > 0);
@@ -843,7 +889,7 @@
     const scale = chartH / priceRange;
 
     // Grid lines
-    pCtx.strokeStyle = "#1E2436";
+    pCtx.strokeStyle = "#EDEFF3";
     pCtx.lineWidth = 0.5;
     for (let i = 0; i <= 5; i++) {
       const y = pad + (chartH / 5) * i;
@@ -853,14 +899,25 @@
       pCtx.stroke();
     }
 
-    // Price labels on right
-    pCtx.fillStyle = "#6B7280";
+    // Price labels on right (vertical axis)
+    pCtx.fillStyle = "#8A93A3";
     pCtx.font = "10px 'JetBrains Mono'";
     pCtx.textAlign = "left";
     for (let i = 0; i <= 5; i++) {
       const price = maxPrice - (priceRange / 5) * i;
       const y = pad + (chartH / 5) * i + 3;
       pCtx.fillText(price.toFixed(0), pad + chartW + 8, y);
+    }
+
+    // Time labels along the bottom (horizontal axis)
+    pCtx.textAlign = "center";
+    const labelCount = Math.min(6, series.length);
+    if (labelCount > 1) {
+      for (let i = 0; i < labelCount; i++) {
+        const idx = Math.round((i / (labelCount - 1)) * (series.length - 1));
+        const cx = pad + (idx + 0.5) * (chartW / series.length);
+        pCtx.fillText(fmtTime(series[idx].t), cx, pad + chartH + 14);
+      }
     }
 
     // Candles
@@ -879,8 +936,8 @@
       const yC = pad + chartH - (c.c - minPrice) * scale;
 
       const isUp = c.c >= c.o;
-      pCtx.strokeStyle = isUp ? "#38E1C7" : "#FF6F91";
-      pCtx.fillStyle = isUp ? "rgba(56, 225, 199, 0.8)" : "rgba(255, 111, 145, 0.8)";
+      pCtx.strokeStyle = isUp ? "#14B8A6" : "#E5484D";
+      pCtx.fillStyle = isUp ? "rgba(20, 184, 166, 0.85)" : "rgba(229, 72, 77, 0.85)";
 
       pCtx.lineWidth = 1;
       pCtx.beginPath();
@@ -900,7 +957,7 @@
     const w = volumeCanvas.width / (window.devicePixelRatio || 1);
     const h = volumeCanvas.height / (window.devicePixelRatio || 1);
 
-    vCtx.fillStyle = "#0B0E1A";
+    vCtx.fillStyle = "#FFFFFF";
     vCtx.fillRect(0, 0, w, h);
 
     if (!rawTrades.length) return;
@@ -914,7 +971,7 @@
     rawTrades.forEach((t, i) => {
       const x = (i + 0.1) * spacing;
       const barH = t.coin_amount * scale;
-      vCtx.fillStyle = t.type === "buy" ? "rgba(56, 225, 199, 0.4)" : "rgba(255, 111, 145, 0.4)";
+      vCtx.fillStyle = t.type === "buy" ? "rgba(20, 184, 166, 0.45)" : "rgba(229, 72, 77, 0.45)";
       vCtx.fillRect(x, h - barH, barW, barH);
     });
   }
@@ -957,12 +1014,12 @@
     recentLows.forEach(i => {
       patterns.push({ type:'support', label:'Support', x:i, price:candles[i].l,
         lineFrom:Math.max(0,i-1), lineTo:Math.min(n-1,i+Math.floor(n*0.15)),
-        color:'rgba(56,225,199,0.55)', dashLine:true });
+        color:'rgba(20,184,166,0.55)', dashLine:true });
     });
     recentHighs.forEach(i => {
       patterns.push({ type:'resistance', label:'Resistance', x:i, price:candles[i].h,
         lineFrom:Math.max(0,i-1), lineTo:Math.min(n-1,i+Math.floor(n*0.15)),
-        color:'rgba(240,180,41,0.55)', dashLine:true });
+        color:'rgba(201,145,30,0.55)', dashLine:true });
     });
 
     // --- Double Top ---
@@ -972,12 +1029,12 @@
       const hb = candles[b].h, hc = candles[c].h;
       if (Math.abs(hb - hc) / hb < 0.025) {           // within 2.5%
         const valley = lows.find(l => l>b && l<c);
-        patterns.push({ type:'double_top', label:'Double Top', x:b, price:hb, color:'rgba(255,111,145,0.7)' });
-        patterns.push({ type:'double_top', label:'', x:c, price:hc, color:'rgba(255,111,145,0.7)' });
+        patterns.push({ type:'double_top', label:'Double Top', x:b, price:hb, color:'rgba(229,72,77,0.7)' });
+        patterns.push({ type:'double_top', label:'', x:c, price:hc, color:'rgba(229,72,77,0.7)' });
         if (valley !== undefined) {
           const neckPrice = candles[valley].l;
           patterns.push({ type:'neckline', label:'Neckline', x:valley, price:neckPrice,
-            lineFrom:b, lineTo:Math.min(n-1,c+2), color:'rgba(255,111,145,0.45)', dashLine:true });
+            lineFrom:b, lineTo:Math.min(n-1,c+2), color:'rgba(229,72,77,0.45)', dashLine:true });
         }
         break; // one double top is enough
       }
@@ -992,13 +1049,13 @@
         if (hh > lh && hh > rh && Math.abs(lh-rh)/hh < 0.06) {
           const lValley = lows.find(l=>l>li&&l<hi);
           const rValley = lows.find(l=>l>hi&&l<ri);
-          patterns.push({ type:'hs', label:'Shoulder', x:li, price:lh, color:'rgba(255,111,145,0.7)' });
-          patterns.push({ type:'hs', label:'Head',     x:hi, price:hh, color:'rgba(255,111,145,0.85)' });
-          patterns.push({ type:'hs', label:'Shoulder', x:ri, price:rh, color:'rgba(255,111,145,0.7)' });
+          patterns.push({ type:'hs', label:'Shoulder', x:li, price:lh, color:'rgba(229,72,77,0.7)' });
+          patterns.push({ type:'hs', label:'Head',     x:hi, price:hh, color:'rgba(229,72,77,0.85)' });
+          patterns.push({ type:'hs', label:'Shoulder', x:ri, price:rh, color:'rgba(229,72,77,0.7)' });
           if (lValley!==undefined && rValley!==undefined) {
             const neckPrice = (candles[lValley].l + candles[rValley].l) / 2;
             patterns.push({ type:'neckline', label:'Neckline', x:lValley, price:neckPrice,
-              lineFrom:lValley, lineTo:Math.min(n-1,ri+2), color:'rgba(255,111,145,0.45)', dashLine:true });
+              lineFrom:lValley, lineTo:Math.min(n-1,ri+2), color:'rgba(229,72,77,0.45)', dashLine:true });
           }
           break;
         }
@@ -1023,8 +1080,8 @@
     if (!visible) return { x:rx, y:ry, w, h };  // return bounds for collision only
 
     // Background pill
-    ctx.globalAlpha = 0.88;
-    ctx.fillStyle = '#0E1220';
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = '#1A1F29';
     ctx.beginPath();
     ctx.roundRect(rx, ry, w, h, 3);
     ctx.fill();
@@ -1035,7 +1092,7 @@
     ctx.fillRect(rx, ry+2, 2, h-4);
 
     // Text
-    ctx.fillStyle = '#CBD5E1';
+    ctx.fillStyle = '#F5F6F8';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, x+1, y);
@@ -1304,7 +1361,7 @@
   annotToggle.addEventListener("click", () => {
     annotationsEnabled = !annotationsEnabled;
     annotToggle.style.color      = annotationsEnabled ? '#F0B429' : '';
-    annotToggle.style.borderColor = annotationsEnabled ? 'rgba(240,180,41,0.4)' : '';
+    annotToggle.style.borderColor = annotationsEnabled ? 'rgba(201,145,30,0.4)' : '';
     drawChart();
   });
 
@@ -1437,6 +1494,44 @@
     render();
     renderMarkets();
   }
+
+  // ========== ACCOUNT MODAL ==========
+  const accountModalOverlay = el("accountModalOverlay");
+
+  async function loadAccountInfo(session) {
+    el("acctEmail").textContent = session.user.email || "—";
+    el("acctJoined").textContent = session.user.created_at
+      ? new Date(session.user.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+      : "—";
+
+    const { data: wallet } = await client.from("wallets")
+      .select("fiat_balance, coin_balance")
+      .eq("user_id", session.user.id)
+      .maybeSingle();
+
+    el("acctFiat").textContent = wallet ? fmtFiat(Number(wallet.fiat_balance)) : fmtFiat(0);
+    el("acctCoins").textContent = wallet ? Number(wallet.coin_balance).toFixed(8) : "0.00000000";
+  }
+
+  el("accountBtn").addEventListener("click", async () => {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) return;
+    await loadAccountInfo(session);
+    accountModalOverlay.style.display = "flex";
+  });
+
+  el("closeAccountModal").addEventListener("click", () => {
+    accountModalOverlay.style.display = "none";
+  });
+
+  accountModalOverlay.addEventListener("click", (e) => {
+    if (e.target === accountModalOverlay) accountModalOverlay.style.display = "none";
+  });
+
+  el("acctSignOutBtn").addEventListener("click", async () => {
+    await client.auth.signOut();
+    window.location.href = "index.html";
+  });
 
   // ========== INITIALIZATION ==========
   (async function init() {
