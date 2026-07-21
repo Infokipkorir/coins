@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   :root {
     --bg: #0B0E14; --surface: #141922; --surface-2: #1C2330; --border: #262E3D;
@@ -76,6 +77,16 @@
 
   .empty { color: var(--text-muted); font-size: 13px; padding: 10px 0; }
   .gate-msg { text-align: center; padding: 80px 20px; color: var(--text-muted); }
+
+  .chart-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+  .range-group { display: flex; gap: 4px; background: var(--surface-2); padding: 3px; border-radius: 8px; }
+  .range-btn {
+    border: none; background: transparent; color: var(--text-muted); font-family: 'Inter', sans-serif;
+    font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+  }
+  .range-btn.active { background: var(--gold); color: #1A1305; }
+  .chart-wrap { position: relative; height: 260px; }
+  .chart-empty { display: none; text-align: center; color: var(--text-muted); font-size: 13px; padding: 90px 0; }
 </style>
 </head>
 <body>
@@ -99,6 +110,22 @@
         <button class="btn" id="setPriceBtn">Update price</button>
       </div>
       <div class="status" id="priceStatus"></div>
+    </div>
+
+    <div class="card">
+      <div class="chart-head">
+        <h2 style="margin:0;">Price history (from executed trades)</h2>
+        <div class="range-group" id="rangeGroup">
+          <button class="range-btn" data-range="1">24H</button>
+          <button class="range-btn active" data-range="7">7D</button>
+          <button class="range-btn" data-range="30">30D</button>
+          <button class="range-btn" data-range="all">ALL</button>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="priceChart"></canvas>
+        <div class="chart-empty" id="priceChartEmpty">No executed trades in this range yet</div>
+      </div>
     </div>
 
     <div class="card">
@@ -156,6 +183,83 @@
     const { data } = await client.from("coin_price").select("price").eq("id", 1).single();
     if (data) el("currentPrice").textContent = fmtFiat(data.price);
   }
+
+  let priceChart = null;
+  let currentRange = "7";
+
+  async function loadPriceHistory(range) {
+    currentRange = range;
+    document.querySelectorAll(".range-btn").forEach(b => b.classList.toggle("active", b.dataset.range === range));
+
+    let query = client.from("transactions")
+      .select("price_at_execution, created_at")
+      .order("created_at", { ascending: true });
+
+    if (range !== "all") {
+      const since = new Date(Date.now() - Number(range) * 24 * 60 * 60 * 1000).toISOString();
+      query = query.gte("created_at", since);
+    }
+
+    const { data, error } = await query;
+    const canvas = el("priceChart");
+    const emptyMsg = el("priceChartEmpty");
+
+    if (error || !data || !data.length) {
+      canvas.style.display = "none";
+      emptyMsg.style.display = "block";
+      if (error) emptyMsg.textContent = error.message;
+      return;
+    }
+    canvas.style.display = "block";
+    emptyMsg.style.display = "none";
+
+    const labels = data.map(t => fmtDate(t.created_at));
+    const prices = data.map(t => Number(t.price_at_execution));
+
+    if (priceChart) {
+      priceChart.data.labels = labels;
+      priceChart.data.datasets[0].data = prices;
+      priceChart.update();
+      return;
+    }
+
+    priceChart = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          data: prices,
+          borderColor: "#F0B429",
+          backgroundColor: "rgba(240,180,41,0.1)",
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.15,
+          fill: true,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: { label: (ctx) => fmtFiat(ctx.parsed.y) },
+          },
+        },
+        scales: {
+          x: { ticks: { color: "#7C8798", maxTicksLimit: 6, font: { size: 11 } }, grid: { color: "#262E3D" } },
+          y: { ticks: { color: "#7C8798", font: { size: 11 }, callback: (v) => fmtFiat(v) }, grid: { color: "#262E3D" } },
+        },
+      },
+    });
+  }
+
+  el("rangeGroup").addEventListener("click", (e) => {
+    const btn = e.target.closest(".range-btn");
+    if (!btn) return;
+    loadPriceHistory(btn.dataset.range);
+  });
 
   async function loadUsers() {
     const { data, error } = await client.rpc("admin_list_users");
@@ -309,6 +413,7 @@
       window.location.href = "index.html";
     });
     loadPrice();
+    loadPriceHistory(currentRange);
     loadUsers();
     loadTxns();
     loadAudit();
