@@ -673,9 +673,18 @@
               <button data-tf="ALL">ALL</button>
             </div>
           </div>
-          <div class="chart-legend">
-            <span><i style="background:var(--up)"></i>Up</span>
-            <span><i style="background:var(--down)"></i>Down</span>
+          <div style="display:flex;align-items:center;gap:14px;">
+            <div class="chart-legend">
+              <span><i style="background:var(--up)"></i>Up</span>
+              <span><i style="background:var(--down)"></i>Down</span>
+            </div>
+            <button id="annotToggle" title="Toggle pattern annotations" style="
+              background:#121729; border:1px solid var(--chart-border); color:var(--chart-text-dim);
+              font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600;
+              padding:5px 9px; border-radius:6px; cursor:pointer; white-space:nowrap;
+              transition:all .15s ease; display:flex; align-items:center; gap:5px;">
+              <span style="font-size:11px;">⌥</span> Patterns
+            </button>
           </div>
         </div>
       </div>
@@ -859,7 +868,8 @@
     const candleW = Math.max(2, candleSlot * 0.7);
     const spacing = (candleSlot - candleW) / 2;
 
-    priceCanvas._meta = { candleSlot };
+    priceCanvas._meta = { candleSlot, pad, chartW, chartH, minPrice, scale, w, h };
+    lastMeta = priceCanvas._meta;
 
     series.forEach((c, i) => {
       const x = pad + spacing + i * candleSlot + candleW / 2;
@@ -881,6 +891,9 @@
       pCtx.fillRect(x - candleW / 2, Math.min(yO, yC), candleW, Math.abs(yC - yO) || 1);
       pCtx.strokeRect(x - candleW / 2, Math.min(yO, yC), candleW, Math.abs(yC - yO) || 1);
     });
+
+    // Draw pattern annotations on top of candles
+    drawAnnotations(lastMeta);
   }
 
   function drawVolume() {
@@ -903,6 +916,224 @@
       const barH = t.coin_amount * scale;
       vCtx.fillStyle = t.type === "buy" ? "rgba(56, 225, 199, 0.4)" : "rgba(255, 111, 145, 0.4)";
       vCtx.fillRect(x, h - barH, barW, barH);
+    });
+  }
+
+  // ========== ANNOTATION SYSTEM ==========
+  let annotationsEnabled = true;
+  let hoveredAnnotation = null;  // { label, x, y } currently under cursor
+  let lastMeta = null;           // cached layout from most recent drawChart
+
+  // --- Pattern detection ---
+  // Returns array of annotation objects: { type, label, x (candle index), price, lineFrom?, lineTo? }
+  function detectPatterns(candles) {
+    const patterns = [];
+    const n = candles.length;
+    if (n < 5) return patterns;
+
+    // Helper: local high/low within a window
+    const isLocalHigh = (i, win=2) => {
+      const lo = Math.max(0, i-win), hi = Math.min(n-1, i+win);
+      for (let j=lo; j<=hi; j++) if (j!==i && candles[j].h >= candles[i].h) return false;
+      return true;
+    };
+    const isLocalLow = (i, win=2) => {
+      const lo = Math.max(0, i-win), hi = Math.min(n-1, i+win);
+      for (let j=lo; j<=hi; j++) if (j!==i && candles[j].l <= candles[i].l) return false;
+      return true;
+    };
+
+    // Collect pivot highs & lows
+    const highs = [], lows = [];
+    for (let i=2; i<n-2; i++) {
+      if (isLocalHigh(i)) highs.push(i);
+      if (isLocalLow(i))  lows.push(i);
+    }
+
+    // --- Support / Resistance (horizontal lines at significant levels) ---
+    // Use the most recent 3 pivot lows as support, 3 pivot highs as resistance
+    const recentLows  = lows.slice(-3);
+    const recentHighs = highs.slice(-3);
+    recentLows.forEach(i => {
+      patterns.push({ type:'support', label:'Support', x:i, price:candles[i].l,
+        lineFrom:Math.max(0,i-1), lineTo:Math.min(n-1,i+Math.floor(n*0.15)),
+        color:'rgba(56,225,199,0.55)', dashLine:true });
+    });
+    recentHighs.forEach(i => {
+      patterns.push({ type:'resistance', label:'Resistance', x:i, price:candles[i].h,
+        lineFrom:Math.max(0,i-1), lineTo:Math.min(n-1,i+Math.floor(n*0.15)),
+        color:'rgba(240,180,41,0.55)', dashLine:true });
+    });
+
+    // --- Double Top ---
+    for (let a=0; a<highs.length-1; a++) {
+      const b = highs[a], c = highs[a+1];
+      if (c - b < 2) continue;
+      const hb = candles[b].h, hc = candles[c].h;
+      if (Math.abs(hb - hc) / hb < 0.025) {           // within 2.5%
+        const valley = lows.find(l => l>b && l<c);
+        patterns.push({ type:'double_top', label:'Double Top', x:b, price:hb, color:'rgba(255,111,145,0.7)' });
+        patterns.push({ type:'double_top', label:'', x:c, price:hc, color:'rgba(255,111,145,0.7)' });
+        if (valley !== undefined) {
+          const neckPrice = candles[valley].l;
+          patterns.push({ type:'neckline', label:'Neckline', x:valley, price:neckPrice,
+            lineFrom:b, lineTo:Math.min(n-1,c+2), color:'rgba(255,111,145,0.45)', dashLine:true });
+        }
+        break; // one double top is enough
+      }
+    }
+
+    // --- Head & Shoulders (bearish) ---
+    if (highs.length >= 3) {
+      for (let a=0; a<highs.length-2; a++) {
+        const li=highs[a], hi=highs[a+1], ri=highs[a+2];
+        if (hi-li < 2 || ri-hi < 2) continue;
+        const lh=candles[li].h, hh=candles[hi].h, rh=candles[ri].h;
+        if (hh > lh && hh > rh && Math.abs(lh-rh)/hh < 0.06) {
+          const lValley = lows.find(l=>l>li&&l<hi);
+          const rValley = lows.find(l=>l>hi&&l<ri);
+          patterns.push({ type:'hs', label:'Shoulder', x:li, price:lh, color:'rgba(255,111,145,0.7)' });
+          patterns.push({ type:'hs', label:'Head',     x:hi, price:hh, color:'rgba(255,111,145,0.85)' });
+          patterns.push({ type:'hs', label:'Shoulder', x:ri, price:rh, color:'rgba(255,111,145,0.7)' });
+          if (lValley!==undefined && rValley!==undefined) {
+            const neckPrice = (candles[lValley].l + candles[rValley].l) / 2;
+            patterns.push({ type:'neckline', label:'Neckline', x:lValley, price:neckPrice,
+              lineFrom:lValley, lineTo:Math.min(n-1,ri+2), color:'rgba(255,111,145,0.45)', dashLine:true });
+          }
+          break;
+        }
+      }
+    }
+
+    return patterns;
+  }
+
+  // --- Draw a small rounded-rectangle label (TradingView style) ---
+  function drawAnnotLabel(ctx, text, x, y, color, isMobile, visible) {
+    if (!text) return { x, y, w:0, h:0 };
+    const fontSize = isMobile ? 9 : 11;
+    ctx.font = `500 ${fontSize}px 'Inter',sans-serif`;
+    const tw = ctx.measureText(text).width;
+    const pad = isMobile ? 3 : 4;
+    const w = tw + pad*2 + 2;
+    const h = fontSize + pad*2;
+    const rx = x - w/2;
+    const ry = y - h/2;
+
+    if (!visible) return { x:rx, y:ry, w, h };  // return bounds for collision only
+
+    // Background pill
+    ctx.globalAlpha = 0.88;
+    ctx.fillStyle = '#0E1220';
+    ctx.beginPath();
+    ctx.roundRect(rx, ry, w, h, 3);
+    ctx.fill();
+
+    // Colored left border accent
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = color;
+    ctx.fillRect(rx, ry+2, 2, h-4);
+
+    // Text
+    ctx.fillStyle = '#CBD5E1';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x+1, y);
+    ctx.globalAlpha = 1;
+
+    return { x:rx, y:ry, w, h };
+  }
+
+  // --- Main overlay draw pass ---
+  function drawAnnotations(meta) {
+    if (!annotationsEnabled || !series.length || !meta) return;
+    const isMobile = window.innerWidth < 768;
+    const patterns = detectPatterns(series);
+    if (!patterns.length) return;
+
+    const { pad, chartW, chartH, candleSlot, minPrice, scale, w, h } = meta;
+
+    // candleX: pixel x center of candle i
+    const cx = i => pad + (i + 0.5) * candleSlot;
+    // priceY: pixel y for a given price
+    const py = p => pad + chartH - (p - minPrice) * scale;
+
+    // Separate lines from point labels
+    const linePatterns  = patterns.filter(p => p.lineFrom !== undefined);
+    const pointPatterns = patterns.filter(p => p.lineFrom === undefined);
+
+    // 1. Draw horizontal dashed lines first (behind labels)
+    linePatterns.forEach(p => {
+      const y = py(p.price);
+      if (y < 0 || y > h) return;
+      pCtx.save();
+      pCtx.setLineDash([4, 4]);
+      pCtx.lineWidth = 1;
+      pCtx.strokeStyle = p.color;
+      pCtx.beginPath();
+      pCtx.moveTo(cx(p.lineFrom), y);
+      pCtx.lineTo(cx(p.lineTo), y);
+      pCtx.stroke();
+      pCtx.setLineDash([]);
+      pCtx.restore();
+    });
+
+    // 2. Collect all label positions + perform collision detection
+    const placed = [];   // { x1,y1,x2,y2 } bounding boxes already placed
+
+    const collides = (rx, ry, rw, rh) =>
+      placed.some(b => rx < b.x2 && rx+rw > b.x1 && ry < b.y2 && ry+rh > b.y1);
+
+    // Determine which labels are hovered (within 14px of cursor)
+    const hov = hoveredAnnotation;
+
+    // Point labels (Head, Shoulder, Double Top, etc.)
+    pointPatterns.forEach(p => {
+      if (!p.label) return;
+      if (isMobile && (p.type==='resistance' || p.type==='support')) return; // hide on mobile
+
+      const x = cx(p.x);
+      const rawY = py(p.price);
+      // Place label above the candle high with small offset
+      const offset = isMobile ? 10 : 13;
+      let labelY = rawY - offset;
+      labelY = Math.max(14, Math.min(h - 14, labelY));
+
+      // On mobile, show label only on hover; on desktop always show
+      const isHovered = hov && Math.abs(hov.x - x) < 30 && Math.abs(hov.y - labelY) < 20;
+      const showLabel = !isMobile || isHovered;
+
+      // Dry-run to get bounds
+      const bounds = drawAnnotLabel(pCtx, p.label, x, labelY, p.color, isMobile, false);
+      if (bounds.w > 0 && !collides(bounds.x, bounds.y, bounds.w, bounds.h)) {
+        drawAnnotLabel(pCtx, p.label, x, labelY, p.color, isMobile, showLabel);
+        placed.push({ x1:bounds.x, y1:bounds.y, x2:bounds.x+bounds.w, y2:bounds.y+bounds.h });
+
+        // Tiny dot marker at candle tip
+        pCtx.beginPath();
+        pCtx.arc(x, rawY - 3, isMobile ? 2 : 2.5, 0, Math.PI*2);
+        pCtx.fillStyle = p.color;
+        pCtx.fill();
+      }
+    });
+
+    // Line labels (Neckline, Support, Resistance) — place at right end of line
+    linePatterns.forEach(p => {
+      if (!p.label) return;
+      if (isMobile && p.type !== 'neckline') return; // only neckline on mobile
+
+      const x = cx(p.lineTo) + (isMobile ? 4 : 6);
+      const y = py(p.price);
+      if (y < 0 || y > h) return;
+
+      const isHovered = hov && Math.abs(hov.x - x) < 36 && Math.abs(hov.y - y) < 16;
+      const showLabel = !isMobile || isHovered;
+
+      const bounds = drawAnnotLabel(pCtx, p.label, x + 20, y, p.color, isMobile, false);
+      if (bounds.w > 0 && !collides(bounds.x, bounds.y, bounds.w, bounds.h)) {
+        drawAnnotLabel(pCtx, p.label, x + 20, y, p.color, isMobile, showLabel);
+        placed.push({ x1:bounds.x, y1:bounds.y, x2:bounds.x+bounds.w, y2:bounds.y+bounds.h });
+      }
     });
   }
 
@@ -1028,11 +1259,54 @@
   }
 
   // ========== EVENT LISTENERS ==========
-  priceCanvas.addEventListener("mousemove", (e) => showTooltipAt(e.clientX));
-  priceCanvas.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
-  priceCanvas.addEventListener("touchstart", (e) => { if (e.touches[0]) showTooltipAt(e.touches[0].clientX); }, { passive: true });
-  priceCanvas.addEventListener("touchmove", (e) => { if (e.touches[0]) showTooltipAt(e.touches[0].clientX); }, { passive: true });
-  priceCanvas.addEventListener("touchend", () => { tooltip.style.display = "none"; });
+
+  // Track cursor position for hover-reveal labels on annotations
+  priceCanvas.addEventListener("mousemove", (e) => {
+    showTooltipAt(e.clientX);
+    const rect = priceCanvas.getBoundingClientRect();
+    const prev = hoveredAnnotation;
+    hoveredAnnotation = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    // Only redraw annotations if cursor moved meaningfully (saves redraws)
+    if (!prev || Math.abs(prev.x - hoveredAnnotation.x) > 4 || Math.abs(prev.y - hoveredAnnotation.y) > 4) {
+      if (annotationsEnabled && lastMeta) {
+        // Redraw chart + annotations without triggering full render()
+        drawChart();
+      }
+    }
+  });
+
+  priceCanvas.addEventListener("mouseleave", () => {
+    tooltip.style.display = "none";
+    hoveredAnnotation = null;
+    if (annotationsEnabled && lastMeta) drawChart();
+  });
+
+  // Touch: show annotation labels on tap position
+  priceCanvas.addEventListener("touchmove", (e) => {
+    if (!e.touches[0]) return;
+    const rect = priceCanvas.getBoundingClientRect();
+    hoveredAnnotation = { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+    showTooltipAt(e.touches[0].clientX);
+    if (annotationsEnabled && lastMeta) drawChart();
+  }, { passive: true });
+
+  priceCanvas.addEventListener("touchend", () => {
+    tooltip.style.display = "none";
+    hoveredAnnotation = null;
+    if (annotationsEnabled && lastMeta) drawChart();
+  });
+  priceCanvas.addEventListener("touchstart", (e) => {
+    if (e.touches[0]) showTooltipAt(e.touches[0].clientX);
+  }, { passive: true });
+
+  // Annotation toggle button
+  const annotToggle = el("annotToggle");
+  annotToggle.addEventListener("click", () => {
+    annotationsEnabled = !annotationsEnabled;
+    annotToggle.style.color      = annotationsEnabled ? '#F0B429' : '';
+    annotToggle.style.borderColor = annotationsEnabled ? 'rgba(240,180,41,0.4)' : '';
+    drawChart();
+  });
 
   el("timeframes").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-tf]");
