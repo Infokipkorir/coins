@@ -864,14 +864,16 @@
     autoSize: true,
   });
 
-  const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
-    upColor: UP_COLOR,
-    downColor: DOWN_COLOR,
-    borderUpColor: UP_COLOR,
-    borderDownColor: DOWN_COLOR,
-    wickUpColor: UP_COLOR,
-    wickDownColor: DOWN_COLOR,
+  // Main price series: a vertical line/area chart (the classic exchange "price line"
+  // look) rather than candlesticks. Color flips green/red based on the net move
+  // across the currently visible timeframe.
+  const priceSeries = chart.addSeries(LightweightCharts.AreaSeries, {
+    lineColor: UP_COLOR,
+    topColor: "rgba(20, 184, 166, 0.28)",
+    bottomColor: "rgba(20, 184, 166, 0.02)",
+    lineWidth: 2,
     priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+    crosshairMarkerRadius: 4,
   });
 
   // Volume rendered as an overlay pane pinned to the bottom of the same chart
@@ -899,8 +901,12 @@
 
   chart.subscribeCrosshairMove(param => {
     if (!param.point || !param.time) { tooltip.style.display = "none"; return; }
-    const d = param.seriesData.get(candleSeries);
+    const d = param.seriesData.get(priceSeries);
     if (!d) { tooltip.style.display = "none"; return; }
+
+    // Look up the full OHLC bin behind this point (if we have one) so the
+    // tooltip can still show high/low context, not just the line value.
+    const bin = series.find(s => seriesTime(s) === param.time);
 
     tooltip.style.display = "block";
     const containerW = priceChartEl.clientWidth;
@@ -911,10 +917,11 @@
     tooltip.style.top = "8px";
     tooltip.innerHTML = `
       <div class="t-row"><span class="t-label">${fmtCrosshairTime(param.time)}</span></div>
-      <div class="t-row"><span class="t-label">O</span><span>${fmtFiat(d.open)}</span></div>
-      <div class="t-row"><span class="t-label">H</span><span>${fmtFiat(d.high)}</span></div>
-      <div class="t-row"><span class="t-label">L</span><span>${fmtFiat(d.low)}</span></div>
-      <div class="t-row"><span class="t-label">C</span><span>${fmtFiat(d.close)}</span></div>
+      <div class="t-row"><span class="t-label">Price</span><span>${fmtFiat(d.value)}</span></div>
+      ${bin ? `
+      <div class="t-row"><span class="t-label">H</span><span>${fmtFiat(bin.h)}</span></div>
+      <div class="t-row"><span class="t-label">L</span><span>${fmtFiat(bin.l)}</span></div>
+      ` : ""}
     `;
   });
 
@@ -1010,7 +1017,7 @@
   // --- Apply detected patterns as native chart price lines + markers ---
   function updateAnnotations() {
     // Clear previous price lines
-    priceLines.forEach(line => candleSeries.removePriceLine(line));
+    priceLines.forEach(line => priceSeries.removePriceLine(line));
     priceLines = [];
 
     if (!annotationsEnabled || series.length < 5) {
@@ -1024,7 +1031,7 @@
 
     // Support / resistance / neckline → native dashed price lines with axis labels
     linePatterns.forEach(p => {
-      priceLines.push(candleSeries.createPriceLine({
+      priceLines.push(priceSeries.createPriceLine({
         price: p.price,
         color: p.color,
         lineWidth: 1,
@@ -1046,7 +1053,7 @@
       .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
 
     if (!seriesMarkersApi) {
-      seriesMarkersApi = LightweightCharts.createSeriesMarkers(candleSeries, markers);
+      seriesMarkersApi = LightweightCharts.createSeriesMarkers(priceSeries, markers);
     } else {
       seriesMarkersApi.setMarkers(markers);
     }
@@ -1159,74 +1166,41 @@
     el("lastUpdated").textContent = "Last: " + fmtTime(last_obj.t);
   }
 
+  // Push the current `series` / `volSeries` bins into the two Lightweight
+  // Charts series. This is the piece that was missing before — the chart
+  // was being configured but never actually fed any data.
+  function updateChartData() {
+    if (!series.length) {
+      priceSeries.setData([]);
+      volumeSeries.setData([]);
+      return;
+    }
+
+    // Overall trend across the visible window decides the line/fill color,
+    // the same way a real exchange colors its price line.
+    const trendUp = series[series.length - 1].c >= series[0].o;
+    priceSeries.applyOptions({
+      lineColor: trendUp ? UP_COLOR : DOWN_COLOR,
+      topColor: trendUp ? "rgba(20, 184, 166, 0.28)" : "rgba(229, 72, 77, 0.28)",
+      bottomColor: trendUp ? "rgba(20, 184, 166, 0.02)" : "rgba(229, 72, 77, 0.02)",
+    });
+
+    priceSeries.setData(series.map(s => ({ time: seriesTime(s), value: s.c })));
+    volumeSeries.setData(volSeries.map(v => ({
+      time: seriesTime(v),
+      value: v.v,
+      color: v.up ? "rgba(20, 184, 166, 0.5)" : "rgba(229, 72, 77, 0.5)",
+    })));
+  }
+
   function render() {
     refreshSeries();
-    drawChart();
-    drawVolume();
+    updateChartData();
+    updateAnnotations();
     updateStats();
   }
 
-  function showTooltipAt(clientX) {
-    const meta = priceCanvas._meta;
-    if (!meta || !series.length) return;
-    const rect = priceCanvas.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const idx = Math.min(series.length - 1, Math.max(0, Math.floor(x / meta.candleSlot)));
-    const d = series[idx];
-    if (!d) return;
-    tooltip.style.display = "block";
-    const tw = 140;
-    tooltip.style.left = Math.min(rect.width - tw, Math.max(0, x + 10)) + "px";
-    tooltip.style.top = "8px";
-    tooltip.innerHTML = `
-      <div class="t-row"><span class="t-label">${fmtTime(d.t)}</span></div>
-      <div class="t-row"><span class="t-label">O</span><span>${fmtFiat(d.o)}</span></div>
-      <div class="t-row"><span class="t-label">H</span><span>${fmtFiat(d.h)}</span></div>
-      <div class="t-row"><span class="t-label">L</span><span>${fmtFiat(d.l)}</span></div>
-      <div class="t-row"><span class="t-label">C</span><span>${fmtFiat(d.c)}</span></div>
-    `;
-  }
-
   // ========== EVENT LISTENERS ==========
-
-  // Track cursor position for hover-reveal labels on annotations
-  priceCanvas.addEventListener("mousemove", (e) => {
-    showTooltipAt(e.clientX);
-    const rect = priceCanvas.getBoundingClientRect();
-    const prev = hoveredAnnotation;
-    hoveredAnnotation = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    // Only redraw annotations if cursor moved meaningfully (saves redraws)
-    if (!prev || Math.abs(prev.x - hoveredAnnotation.x) > 4 || Math.abs(prev.y - hoveredAnnotation.y) > 4) {
-      if (annotationsEnabled && lastMeta) {
-        // Redraw chart + annotations without triggering full render()
-        drawChart();
-      }
-    }
-  });
-
-  priceCanvas.addEventListener("mouseleave", () => {
-    tooltip.style.display = "none";
-    hoveredAnnotation = null;
-    if (annotationsEnabled && lastMeta) drawChart();
-  });
-
-  // Touch: show annotation labels on tap position
-  priceCanvas.addEventListener("touchmove", (e) => {
-    if (!e.touches[0]) return;
-    const rect = priceCanvas.getBoundingClientRect();
-    hoveredAnnotation = { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
-    showTooltipAt(e.touches[0].clientX);
-    if (annotationsEnabled && lastMeta) drawChart();
-  }, { passive: true });
-
-  priceCanvas.addEventListener("touchend", () => {
-    tooltip.style.display = "none";
-    hoveredAnnotation = null;
-    if (annotationsEnabled && lastMeta) drawChart();
-  });
-  priceCanvas.addEventListener("touchstart", (e) => {
-    if (e.touches[0]) showTooltipAt(e.touches[0].clientX);
-  }, { passive: true });
 
   // Annotation toggle button
   const annotToggle = el("annotToggle");
@@ -1234,7 +1208,7 @@
     annotationsEnabled = !annotationsEnabled;
     annotToggle.style.color      = annotationsEnabled ? '#F0B429' : '';
     annotToggle.style.borderColor = annotationsEnabled ? 'rgba(201,145,30,0.4)' : '';
-    drawChart();
+    updateAnnotations();
   });
 
   el("timeframes").addEventListener("click", (e) => {
@@ -1244,12 +1218,6 @@
     btn.classList.add("active");
     currentTF = btn.dataset.tf;
     render();
-  });
-
-  let resizeTimer;
-  window.addEventListener("resize", () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(render, 100);
   });
 
   // ========== SIDE PANEL CONTROLS ==========
@@ -1423,8 +1391,8 @@
         currentPrice = Number(payload.new.price);
         rawPoints.push({ t: ts, price: currentPrice });
         applyLiveTick(currentPrice, ts);
-        drawChart();
-        drawVolume();
+        updateChartData();
+        updateAnnotations();
         updateStats();
         renderMarkets();
         loadInvestment(session.user.id);
