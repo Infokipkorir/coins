@@ -666,8 +666,9 @@
         <div class="chart-controls">
           <div class="control-group">
             <div class="timeframes" id="timeframes">
+              <button data-tf="LIVE" class="active">LIVE</button>
               <button data-tf="1H">1H</button>
-              <button data-tf="1D" class="active">1D</button>
+              <button data-tf="1D">1D</button>
               <button data-tf="1W">1W</button>
               <button data-tf="1M">1M</button>
               <button data-tf="ALL">ALL</button>
@@ -820,7 +821,7 @@
   let series = [];
   let rawPoints = [];
   let rawTrades = [];
-  let currentTF = "1D";
+  let currentTF = "LIVE";
 
   // ========== FORMATTING ==========
   function fmtFiat(n) { return "KES " + (typeof n === "number" && !isNaN(n) ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"); }
@@ -863,22 +864,22 @@
     timeScale: {
       borderColor: "#E2E5EA",
       timeVisible: true,
-      secondsVisible: false,
+      secondsVisible: true,
     },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     autoSize: true,
   });
 
-  // Main price series: a vertical line/area chart (the classic exchange "price line"
-  // look) rather than candlesticks. Color flips green/red based on the net move
-  // across the currently visible timeframe.
-  const priceSeries = chart.addSeries(LightweightCharts.AreaSeries, {
-    lineColor: UP_COLOR,
-    topColor: "rgba(20, 184, 166, 0.28)",
-    bottomColor: "rgba(20, 184, 166, 0.02)",
-    lineWidth: 2,
+  // Main price series: candlesticks so every bar visibly shows that bar's
+  // rise (green) or drop (red) — not a single smoothed trend line.
+  const priceSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+    upColor: UP_COLOR,
+    downColor: DOWN_COLOR,
+    borderUpColor: UP_COLOR,
+    borderDownColor: DOWN_COLOR,
+    wickUpColor: UP_COLOR,
+    wickDownColor: DOWN_COLOR,
     priceFormat: { type: "price", precision: 2, minMove: 0.01 },
-    crosshairMarkerRadius: 4,
   });
 
   // Volume rendered as an overlay pane pinned to the bottom of the same chart
@@ -1067,18 +1068,26 @@
   // ========== CANDLE GENERATION ==========
   let volSeries = []; // volume aligned to the same time buckets as `series`
 
+  const tfMs = {
+    "LIVE": 300000,      // 5 minute rolling window
+    "1H": 3600000,
+    "1D": 86400000,
+    "1W": 604800000,
+    "1M": 2592000000,
+  };
+  // How wide each candle is, per timeframe. LIVE gets one candle per second
+  // so a rise/drop is visible every second; the rest keep the original
+  // 12-candles-per-window behavior.
+  function binSizeFor(tf, windowMs) {
+    if (tf === "LIVE") return 1000;
+    return windowMs / 12;
+  }
+
   function refreshSeries() {
     if (!rawPoints.length) { series = []; volSeries = []; return; }
 
     const now = Date.now();
-    const tfMs = {
-      "1H": 3600000,
-      "1D": 86400000,
-      "1W": 604800000,
-      "1M": 2592000000,
-      "ALL": now
-    };
-    const ms = tfMs[currentTF] || 86400000;
+    const ms = currentTF === "ALL" ? now : (tfMs[currentTF] || 86400000);
     const cutoff = now - ms;
     const pts = rawPoints.filter(p => p.t >= cutoff);
     const trades = rawTrades.filter(t => t.t >= cutoff);
@@ -1106,7 +1115,7 @@
       });
       volSeries = series.map(c => ({ key: c.key, t: c.t, v: volGrouped[c.key] || 0, up: c.c >= c.o }));
     } else {
-      const binSize = ms / 12;
+      const binSize = binSizeFor(currentTF, ms);
       const bins = {};
       pts.forEach(p => {
         const bin = Math.floor(p.t / binSize) * binSize;
@@ -1133,12 +1142,32 @@
     }
   }
 
+  // Applies one live price tick to the in-memory series. If the tick lands
+  // in the same time bin as the last candle, it just updates that candle's
+  // high/low/close (a wick growing in real time). If the tick has crossed
+  // into a new bin (e.g. a new second has started on LIVE), it opens a
+  // brand-new candle — this is what makes each second show its own
+  // distinct rise/drop bar instead of one candle stretching forever.
   function applyLiveTick(price, ts) {
-    if (!series.length) { series = [{ t: ts, o: price, h: price, l: price, c: price }]; return; }
+    const ms = currentTF === "ALL" ? Date.now() : (tfMs[currentTF] || 86400000);
+    const binSize = currentTF === "ALL" ? 86400000 : binSizeFor(currentTF, ms);
+    const bin = Math.floor(ts / binSize) * binSize;
+
+    if (!series.length) {
+      series = [{ t: bin, o: price, h: price, l: price, c: price }];
+      volSeries = [{ t: bin, v: 0, up: true }];
+      return;
+    }
+
     const last = series[series.length - 1];
-    last.h = Math.max(last.h, price);
-    last.l = Math.min(last.l, price);
-    last.c = price;
+    if (bin > last.t) {
+      series.push({ t: bin, o: last.c, h: price, l: price, c: price });
+      volSeries.push({ t: bin, v: 0, up: price >= last.c });
+    } else {
+      last.h = Math.max(last.h, price);
+      last.l = Math.min(last.l, price);
+      last.c = price;
+    }
   }
 
   function updateStats() {
@@ -1181,16 +1210,13 @@
       return;
     }
 
-    // Overall trend across the visible window decides the line/fill color,
-    // the same way a real exchange colors its price line.
-    const trendUp = series[series.length - 1].c >= series[0].o;
-    priceSeries.applyOptions({
-      lineColor: trendUp ? UP_COLOR : DOWN_COLOR,
-      topColor: trendUp ? "rgba(20, 184, 166, 0.28)" : "rgba(229, 72, 77, 0.28)",
-      bottomColor: trendUp ? "rgba(20, 184, 166, 0.02)" : "rgba(229, 72, 77, 0.02)",
-    });
-
-    priceSeries.setData(series.map(s => ({ time: seriesTime(s), value: s.c })));
+    priceSeries.setData(series.map(s => ({
+      time: seriesTime(s),
+      open: s.o,
+      high: s.h,
+      low: s.l,
+      close: s.c,
+    })));
     volumeSeries.setData(volSeries.map(v => ({
       time: seriesTime(v),
       value: v.v,
