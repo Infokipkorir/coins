@@ -157,6 +157,7 @@
       <span><i style="background:#3FB8AF"></i> Moving average</span>
       <span><i style="background:#5B7FD4"></i> Bollinger bands</span>
       <span><i style="background:#D4A93B"></i> Current price</span>
+      <span><i style="background:#8B93A7"></i> Pattern annotation</span>
     </div>
   </div>
 
@@ -320,6 +321,112 @@
   const volumeCtx = volumeCanvas.getContext("2d");
   const tooltip = el("tooltip");
 
+  // --- Pattern annotation (Head & Shoulders style labeling) --------------
+  // Finds local swing highs/lows in the candle series: a candle is a swing
+  // high if its high is greater than every candle within `window` slots on
+  // either side (and similarly for swing lows).
+  function findSwingPoints(candles, windowSize) {
+    const highsIdx = [], lowsIdx = [];
+    for (let i = windowSize; i < candles.length - windowSize; i++) {
+      let isHigh = true, isLow = true;
+      for (let k = i - windowSize; k <= i + windowSize; k++) {
+        if (k === i) continue;
+        if (candles[k].h >= candles[i].h) isHigh = false;
+        if (candles[k].l <= candles[i].l) isLow = false;
+      }
+      if (isHigh) highsIdx.push(i);
+      if (isLow) lowsIdx.push(i);
+    }
+    return { highsIdx, lowsIdx };
+  }
+
+  function troughBetween(candles, a, b) {
+    let minI = a, minV = Infinity;
+    for (let k = a; k <= b; k++) { if (candles[k].l < minV) { minV = candles[k].l; minI = k; } }
+    return { i: minI, l: minV };
+  }
+
+  // Looks for a classic Head & Shoulders shape: three swing highs where the
+  // middle one is the tallest (the "head"), flanked by two lower, roughly
+  // comparable peaks (the "shoulders"). Purely a geometric/heuristic read
+  // of the candles already on screen — not a trading signal.
+  function detectHeadAndShoulders(candles) {
+    if (candles.length < 7) return null;
+    const windowSize = Math.max(1, Math.floor(candles.length / 20));
+    const { highsIdx } = findSwingPoints(candles, windowSize);
+    if (highsIdx.length < 3) return null;
+
+    // Take the 3 tallest swing highs, then re-sort them back into time order.
+    const topThree = highsIdx
+      .map(i => ({ i, h: candles[i].h }))
+      .sort((a, b) => b.h - a.h)
+      .slice(0, 3)
+      .sort((a, b) => a.i - b.i);
+    if (topThree.length < 3) return null;
+
+    const [left, mid, right] = topThree;
+    if (!(mid.h > left.h && mid.h > right.h)) return null; // middle must be the highest
+
+    return {
+      left, mid, right,
+      t1: troughBetween(candles, left.i, mid.i),
+      t2: troughBetween(candles, mid.i, right.i),
+    };
+  }
+
+  function drawPatternAnnotations(candles, xFor, yForClamped) {
+    const pattern = detectHeadAndShoulders(candles);
+    priceCtx.save();
+
+    if (pattern) {
+      const { left, mid, right, t1, t2 } = pattern;
+      priceCtx.fillStyle = "#C7CCDA";
+      priceCtx.font = "11px 'Inter', sans-serif";
+      priceCtx.textAlign = "center";
+      priceCtx.fillText("Shoulder", xFor(left.i), yForClamped(left.h) - 10);
+      priceCtx.fillText("Head", xFor(mid.i), yForClamped(mid.h) - 10);
+      priceCtx.fillText("Shoulder", xFor(right.i), yForClamped(right.h) - 10);
+
+      const x1 = xFor(t1.i), y1 = yForClamped(t1.l);
+      const x2 = xFor(t2.i), y2 = yForClamped(t2.l);
+      const dx = x2 - x1, dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const ex = (dx / len) * 24, ey = (dy / len) * 24;
+
+      priceCtx.strokeStyle = "#8B93A7";
+      priceCtx.lineWidth = 1;
+      priceCtx.setLineDash([4, 4]);
+      priceCtx.beginPath();
+      priceCtx.moveTo(x1 - ex, y1 - ey);
+      priceCtx.lineTo(x2 + ex, y2 + ey);
+      priceCtx.stroke();
+      priceCtx.setLineDash([]);
+
+      priceCtx.fillStyle = "#8B93A7";
+      priceCtx.font = "10px 'Inter', sans-serif";
+      priceCtx.fillText("Neckline", (x1 + x2) / 2, Math.max(y1, y2) + 16);
+
+      el("predictNote").insertAdjacentHTML("beforeend",
+        `<br><b style="color:#D4A93B;">Pattern</b> — a Head &amp; Shoulders-shaped swing structure was detected on the visible candles. This is an automatic geometric read, not a trading signal or advice.`);
+    } else {
+      // Fallback: just call out the overall swing high/low so the chart
+      // still reads like an annotated technical chart.
+      let hiIdx = 0, loIdx = 0;
+      candles.forEach((d, i) => {
+        if (d.h > candles[hiIdx].h) hiIdx = i;
+        if (d.l < candles[loIdx].l) loIdx = i;
+      });
+      priceCtx.fillStyle = "#8B93A7";
+      priceCtx.font = "11px 'Inter', sans-serif";
+      priceCtx.textAlign = "center";
+      priceCtx.fillText("Peak", xFor(hiIdx), yForClamped(candles[hiIdx].h) - 10);
+      priceCtx.fillText("Support", xFor(loIdx), yForClamped(candles[loIdx].l) + 16);
+    }
+
+    priceCtx.textAlign = "left";
+    priceCtx.restore();
+  }
+
   function resizeCanvas(canvas) {
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
@@ -378,6 +485,7 @@
     const candleW = Math.max(2, candleSlot * 0.6);
     const xFor = (i) => i * candleSlot + candleSlot / 2;
     const yFor = (price) => padding.top + (1 - (price - minP) / (maxP - minP)) * plotH;
+    const yForClamped = (price) => Math.min(Math.max(yFor(price), padding.top + 12), padding.top + plotH - 4);
 
     // Dotted grid + price axis labels
     priceCtx.strokeStyle = "#1B2230";
@@ -466,6 +574,8 @@
     priceCtx.fillRect(w - padding.right, priceY - 9, tagW > (padding.right - 2) ? padding.right - 2 : tagW, 18);
     priceCtx.fillStyle = "#0B0E14";
     priceCtx.fillText(tagText, w - padding.right + 4, priceY + 4);
+
+    drawPatternAnnotations(series, xFor, yForClamped);
 
     priceCanvas._meta = { candleSlot };
   }
