@@ -792,23 +792,34 @@
   const tooltip = el("tooltip");
 
   function resizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
     const priceRect = priceCanvas.parentElement.getBoundingClientRect();
-    priceCanvas.width = priceRect.width * window.devicePixelRatio;
-    priceCanvas.height = priceRect.height * window.devicePixelRatio;
-    pCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    const newPW = Math.round(priceRect.width * dpr);
+    const newPH = Math.round(priceRect.height * dpr);
+    if (priceCanvas.width !== newPW || priceCanvas.height !== newPH) {
+      priceCanvas.width = newPW;
+      priceCanvas.height = newPH;
+      pCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
 
     const volumeRect = volumeCanvas.getBoundingClientRect();
-    volumeCanvas.width = volumeRect.width * window.devicePixelRatio;
-    volumeCanvas.height = volumeRect.height * window.devicePixelRatio;
-    vCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    const newVW = Math.round(volumeRect.width * dpr);
+    const newVH = Math.round(volumeRect.height * dpr);
+    if (volumeCanvas.width !== newVW || volumeCanvas.height !== newVH) {
+      volumeCanvas.width = newVW;
+      volumeCanvas.height = newVH;
+      vCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
   }
 
   function drawChart() {
+    // Resize only if needed — resizing clears the canvas and causes blink
     resizeCanvas();
     if (!series.length) return;
 
-    const w = priceCanvas.width / window.devicePixelRatio;
-    const h = priceCanvas.height / window.devicePixelRatio;
+    const dpr = window.devicePixelRatio || 1;
+    const w = priceCanvas.width / dpr;
+    const h = priceCanvas.height / dpr;
     const pad = 50;
     const chartW = w - pad * 2;
     const chartH = h - pad;
@@ -873,9 +884,8 @@
   }
 
   function drawVolume() {
-    if (!volumeCanvas.width) resizeCanvas();
-    const w = volumeCanvas.width / window.devicePixelRatio;
-    const h = volumeCanvas.height / window.devicePixelRatio;
+    const w = volumeCanvas.width / (window.devicePixelRatio || 1);
+    const h = volumeCanvas.height / (window.devicePixelRatio || 1);
 
     vCtx.fillStyle = "#0B0E1A";
     vCtx.fillRect(0, 0, w, h);
@@ -1033,7 +1043,11 @@
     render();
   });
 
-  window.addEventListener("resize", render);
+  let resizeTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(render, 100);
+  });
 
   // ========== SIDE PANEL CONTROLS ==========
   const sidePanel = el("sidePanel");
